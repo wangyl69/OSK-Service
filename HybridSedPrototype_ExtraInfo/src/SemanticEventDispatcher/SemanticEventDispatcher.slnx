@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="SemanticEventDispatcher.csproj" />
+  <Project Path="../HybridSed.Contracts/HybridSed.Contracts.csproj" />
+  <Project Path="../SemanticEventDispatcher.Tests/SemanticEventDispatcher.Tests.csproj" />
+</Solution>

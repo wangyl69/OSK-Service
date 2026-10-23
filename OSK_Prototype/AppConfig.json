@@ -1,0 +1,187 @@
+{
+  "AppParams": {
+    "Left": 0,
+    "Top": 0,
+    "Width": 2880,
+    "Height": 1800,
+    "WaitTime": 50,
+    "DebugOverlay": true,
+    "GestureInterval": 500,
+    "TouchPadLeft": 790,
+    "TouchPadTop": 1082,
+    "TouchPadWidth": 1113,
+    "TouchPadHeight": 653,
+    "TouchPadTapTime": 50,
+    "TouchPadDoubleTapTime": 50
+  },
+  "DllParams": {
+    "TcMin": {
+      "Default": 35,
+      "Min": 0,
+      "Max": 255,
+      "Step": 1,
+      "Value": 35
+    },
+    "TcMinCritical": {
+      "Default": 70,
+      "Min": 0,
+      "Max": 255,
+      "Step": 1,
+      "Value": 70
+    },
+    "TcMax": {
+      "Default": 255,
+      "Min": 0,
+      "Max": 255,
+      "Step": 1,
+      "Value": 255
+    },
+    "TsMin": {
+      "Default": 10,
+      "Min": 0,
+      "Max": 512,
+      "Step": 1,
+      "Value": 0
+    },
+    "TsMinCritical": {
+      "Default": 10,
+      "Min": 0,
+      "Max": 512,
+      "Step": 1,
+      "Value": 0
+    },
+    "TsMax": {
+      "Default": 512,
+      "Min": 0,
+      "Max": 512,
+      "Step": 1,
+      "Value": 100
+    },
+    "TdMax": {
+      "Default": 60,
+      "Min": 0,
+      "Max": 100,
+      "Step": 1,
+      "Value": 60
+    },
+    "TdMaxCritical": {
+      "Default": 26,
+      "Min": 0,
+      "Max": 100,
+      "Step": 1,
+      "Value": 26
+    },
+    "TvMax": {
+      "Default": 40,
+      "Min": 0,
+      "Max": 100,
+      "Step": 1,
+      "Value": 40
+    },
+    "TvMaxCritical": {
+      "Default": 4,
+      "Min": 0,
+      "Max": 100,
+      "Step": 1,
+      "Value": 4
+    },
+    "TInitJudge": {
+      "Default": 40,
+      "Min": 0,
+      "Max": 100,
+      "Step": 1,
+      "Value": 40
+    },
+    "FrIntervalShort": {
+      "Default": 35,
+      "Min": 0,
+      "Max": 150,
+      "Step": 1,
+      "Value": 20
+    },
+    "FrIntervalLong": {
+      "Default": 200,
+      "Min": 0,
+      "Max": 250,
+      "Step": 1,
+      "Value": 60
+    },
+    "FrWindowMax": {
+      "Default": 200,
+      "Min": 0,
+      "Max": 500,
+      "Step": 1,
+      "Value": 200
+    },
+    "ThTypingM": {
+      "Default": 20,
+      "Min": 0,
+      "Max": 100,
+      "Step": 1,
+      "Value": 20
+    },
+    "ThTypingF": {
+      "Default": 1000,
+      "Min": 0,
+      "Max": 1000,
+      "Step": 1,
+      "Value": 1000
+    },
+    "ThTt": {
+      "Default": 200,
+      "Min": 0,
+      "Max": 1000,
+      "Step": 50,
+      "Value": 200
+    },
+    "ThHp": {
+      "Default": 800,
+      "Min": 0,
+      "Max": 1000,
+      "Step": 50,
+      "Value": 800
+    },
+    "CutFvkNc": {
+      "Default": 0.3,
+      "Min": 0,
+      "Max": 1,
+      "Step": 0.1,
+      "Value": 0.3
+    },
+    "CutFvkC": {
+      "Default": 0.5,
+      "Min": 0,
+      "Max": 1,
+      "Step": 0.1,
+      "Value": 0.5
+    },
+    "TypematicDelayEntry": {
+      "Default": 500,
+      "Min": 250,
+      "Max": 1000,
+      "Step": 10,
+      "Value": 500
+    },
+    "TypematicDelayCount": {
+      "Default": 100,
+      "Min": 33,
+      "Max": 400,
+      "Step": 1,
+      "Value": 100
+    },
+    "LogLevel": {
+      "Default": 0,
+      "Min": 0,
+      "Max": 5,
+      "Step": 1,
+      "Value": 0
+    },
+    "IsRepeat": {
+      "Default": 1,
+      "Min": 0,
+      "Max": 1,
+      "Step": 1,
+      "Value": 1
+    }
+  }
+}

@@ -1,0 +1,63 @@
+// voice_key.mof
+// Defines the Voice Key WMI event classes.
+//
+// Register with:
+//     mofcomp voice_key.mof
+// (run from an Administrator command prompt)
+//
+// Unregister with:
+//     mofcomp /remove voice_key.mof   (not always supported)
+//   or manually delete the classes via wbemtest.
+
+#pragma namespace("\\\\.\\root\\wmi")
+
+// ---------------------------------------------------------------------------
+// Base mode constants
+// ---------------------------------------------------------------------------
+// Mode 0 -> Voice recording
+// Mode 1 -> Voice recorded
+// ---------------------------------------------------------------------------
+
+[abstract]
+class VoiceKeyBaseMode
+{
+    uint32 Mode;   // 0 = recording, 1 = recorded
+};
+
+// ---------------------------------------------------------------------------
+// Event class that carries the mode switch notification
+// ---------------------------------------------------------------------------
+[EventType(1), // EXTRINSIC_EVENT
+ Dynamics,
+ Description("Fired when the Voice Key base mode switches "
+             "(0 = Voice recording, 1 = Voice recorded).")]
+class VoiceKeyModeSwitchEvent : VoiceKeyBaseMode
+{
+    [Description("Timestamp of the mode switch.")]
+    datetime TimeStamp;
+
+    [Description("Name of the process that triggered the switch (optional).")]
+    string   Source;
+};
+
+// ---------------------------------------------------------------------------
+// Provider registration (extrinsic event provider)
+// ---------------------------------------------------------------------------
+[abstract]
+class VoiceKeyEventProvider : __Win32Provider
+{
+    [Description("Python-based Voice Key event provider.")]
+    string Name = "VoiceKeyEventProvider";
+
+    [Description("CLSID of the provider. Must match the registry entry.")]
+    string CLSID = "{9E2F4C1A-3B7D-4E5F-8A12-1C0D2E3F4A5B}";
+};
+
+[abstract]
+class VoiceKeyEventProviderRegistration : __EventProviderRegistration
+{
+    string Provider = "VoiceKeyEventProvider";
+
+    [Description("Events supported by the provider.")]
+    string EventQueryList[] = { "SELECT * FROM VoiceKeyModeSwitchEvent" };
+};

@@ -1,0 +1,12 @@
+**/.vs/
+**/bin/
+**/obj/
+**/build*/
+**/logs/
+**/.venv*/
+**/__pycache__/
+**/.pytest_cache/
+*.pyc
+*.pyo
+*.user
+*.suo

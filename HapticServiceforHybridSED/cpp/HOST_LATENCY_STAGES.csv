@@ -1,0 +1,49 @@
+﻿source,load_workers,stage,samples,p50_ms,p95_ms,p99_ms,max_ms
+OSK_DLL_SED,0,DLL入口→管道WriteFile入口（含Windows/SED）,1600,0.104,0.265,0.644,1.988
+OSK_DLL_SED,0,SED hook→管道WriteFile入口,1600,0.038,0.134,0.446,1.913
+OSK_DLL_SED,0,Named Pipe：WriteFile入口→Service submit,1600,0.021,0.045,0.067,0.728
+OSK_DLL_SED,0,Service：submit→工作线程取出,1600,0.015,0.060,0.648,1.980
+OSK_DLL_SED,0,Service：取出→trigger入口（校验等）,1600,0.000,0.001,0.004,0.016
+OSK_DLL_SED,0,Service：构造报告/CRC→mock提交完成,1600,0.000,0.001,0.009,0.024
+OSK_DLL_SED,0,Service总计：submit→mock完成,1600,0.016,0.061,0.649,1.981
+OSK_DLL_SED,0,Named Pipe＋Service：WriteFile入口→mock完成,1600,0.039,0.098,0.711,2.010
+OSK_DLL_SED,0,DLL入口→mock完成（软件代理全段）,1600,0.147,0.373,1.076,2.823
+OSK_DLL_SED,4,DLL入口→管道WriteFile入口（含Windows/SED）,1600,0.077,0.157,0.256,0.534
+OSK_DLL_SED,4,SED hook→管道WriteFile入口,1600,0.026,0.081,0.121,0.229
+OSK_DLL_SED,4,Named Pipe：WriteFile入口→Service submit,1600,0.017,0.033,0.058,0.136
+OSK_DLL_SED,4,Service：submit→工作线程取出,1600,0.009,0.028,0.170,0.715
+OSK_DLL_SED,4,Service：取出→trigger入口（校验等）,1600,0.000,0.001,0.001,0.019
+OSK_DLL_SED,4,Service：构造报告/CRC→mock提交完成,1600,0.000,0.001,0.001,0.026
+OSK_DLL_SED,4,Service总计：submit→mock完成,1600,0.010,0.029,0.171,0.716
+OSK_DLL_SED,4,Named Pipe＋Service：WriteFile入口→mock完成,1600,0.028,0.058,0.201,0.742
+OSK_DLL_SED,4,DLL入口→mock完成（软件代理全段）,1600,0.109,0.216,0.375,0.943
+OSK_DLL_SED,8,DLL入口→管道WriteFile入口（含Windows/SED）,1600,0.083,0.213,0.343,0.686
+OSK_DLL_SED,8,SED hook→管道WriteFile入口,1600,0.028,0.065,0.131,0.521
+OSK_DLL_SED,8,Named Pipe：WriteFile入口→Service submit,1600,0.019,0.033,0.067,1.836
+OSK_DLL_SED,8,Service：submit→工作线程取出,1600,0.010,0.018,0.030,0.652
+OSK_DLL_SED,8,Service：取出→trigger入口（校验等）,1600,0.000,0.001,0.001,0.004
+OSK_DLL_SED,8,Service：构造报告/CRC→mock提交完成,1600,0.001,0.001,0.001,0.017
+OSK_DLL_SED,8,Service总计：submit→mock完成,1600,0.010,0.019,0.031,0.653
+OSK_DLL_SED,8,Named Pipe＋Service：WriteFile入口→mock完成,1600,0.029,0.052,0.098,1.858
+OSK_DLL_SED,8,DLL入口→mock完成（软件代理全段）,1600,0.116,0.258,0.409,2.210
+DIRECT_PIPE,0,named_pipe_delivery,1600,0.035,0.146,0.213,1.585
+DIRECT_PIPE,0,service_queue,1600,0.015,0.042,0.067,0.500
+DIRECT_PIPE,0,service_prepare,1600,0.000,0.001,0.001,0.006
+DIRECT_PIPE,0,service_build_mock_send,1600,0.001,0.001,0.001,0.004
+DIRECT_PIPE,0,service_total,1600,0.016,0.043,0.069,0.502
+DIRECT_PIPE,0,write_to_mock_complete,1600,0.052,0.185,0.344,1.631
+DIRECT_PIPE,0,write_api_call,1600,0.029,0.082,0.187,1.490
+DIRECT_PIPE,4,named_pipe_delivery,1600,0.020,0.047,0.101,0.573
+DIRECT_PIPE,4,service_queue,1600,0.006,0.021,0.092,0.208
+DIRECT_PIPE,4,service_prepare,1600,0.000,0.001,0.001,0.010
+DIRECT_PIPE,4,service_build_mock_send,1600,0.000,0.001,0.001,0.004
+DIRECT_PIPE,4,service_total,1600,0.007,0.022,0.093,0.209
+DIRECT_PIPE,4,write_to_mock_complete,1600,0.029,0.068,0.144,0.581
+DIRECT_PIPE,4,write_api_call,1600,0.020,0.055,0.088,0.562
+DIRECT_PIPE,8,named_pipe_delivery,1600,0.029,0.048,0.106,0.699
+DIRECT_PIPE,8,service_queue,1600,0.009,0.018,0.056,0.520
+DIRECT_PIPE,8,service_prepare,1600,0.000,0.001,0.001,0.006
+DIRECT_PIPE,8,service_build_mock_send,1600,0.000,0.001,0.001,0.003
+DIRECT_PIPE,8,service_total,1600,0.010,0.019,0.057,0.521
+DIRECT_PIPE,8,write_to_mock_complete,1600,0.039,0.066,0.129,0.709
+DIRECT_PIPE,8,write_api_call,1600,0.022,0.036,0.062,0.303

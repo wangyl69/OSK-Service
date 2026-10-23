@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="src/HybridSed.Contracts/HybridSed.Contracts.csproj" />
+  <Project Path="src/SemanticEventDispatcher/SemanticEventDispatcher.csproj" />
+  <Project Path="src/HapticPipeConsumer/HapticPipeConsumer.csproj" />
+  <Project Path="src/SemanticEventDispatcher.Tests/SemanticEventDispatcher.Tests.csproj" />
+</Solution>

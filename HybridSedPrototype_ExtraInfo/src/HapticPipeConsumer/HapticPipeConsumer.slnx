@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="HapticPipeConsumer.csproj" />
+  <Project Path="../HybridSed.Contracts/HybridSed.Contracts.csproj" />
+</Solution>

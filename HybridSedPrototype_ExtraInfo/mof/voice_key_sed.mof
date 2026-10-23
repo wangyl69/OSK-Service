@@ -1,0 +1,14 @@
+#pragma namespace("\\\\.\\root\\wmi")
+
+[abstract]
+class VoiceKeyBaseMode
+{
+uint32 Mode;
+};
+
+[EventType(1), Dynamic]
+class VoiceKeyModeSwitchEvent : VoiceKeyBaseMode
+{
+datetime TimeStamp;
+string Source;
+};
