@@ -7,9 +7,15 @@ namespace HybridSedPrototype.SemanticEventDispatcher.Inputs;
 internal static class LatencyThreadScheduling
 {
     // Applies only to the current dedicated thread, never to the process or pool.
-    public static void Apply(bool boost, ILogger logger, string role)
+    public static void Apply(bool boost, ILogger logger, string role, string level = "above-normal")
     {
-        var requested = boost ? ThreadPriority.AboveNormal : ThreadPriority.Normal;
+        var requested = !boost ? ThreadPriority.Normal : level switch
+        {
+            "normal" => ThreadPriority.Normal,
+            "above-normal" => ThreadPriority.AboveNormal,
+            "highest" => ThreadPriority.Highest,
+            _ => throw new ArgumentException("Unknown latency thread priority: " + level)
+        };
         try { Thread.CurrentThread.Priority = requested; }
         catch (Exception ex) when (ex is Win32Exception or SecurityException or ThreadStateException)
         {

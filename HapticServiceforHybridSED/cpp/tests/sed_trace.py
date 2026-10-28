@@ -10,8 +10,9 @@ class SedTrace:
     HEADER = 64
     STRIDE = 112
 
-    def __init__(self, name, native_wake=False):
+    def __init__(self, name, native_wake=False, require_hook=True):
         self.native_wake = native_wake
+        self.require_hook = require_hook
         self.kernel = c.WinDLL('kernel32', use_last_error=True)
         self.kernel.OpenFileMappingW.argtypes = [w.DWORD, w.BOOL, w.LPCWSTR]
         self.kernel.OpenFileMappingW.restype = w.HANDLE
@@ -60,7 +61,8 @@ class SedTrace:
             for field in (*fields[1:8], 'enqueue_enter', 'enqueue_return'):
                 row[field] = row[field] * 1_000_000 // self.frequency
             row['wake_signal_return'] = row['wake_signal_return'] * 1_000_000 // self.frequency
-            if not (0 < row['hook'] <= row['publish'] <= row['dequeue'] <= row['write_enter']
+            if not ((0 < row['hook'] <= row['publish'] if self.require_hook else row['hook'] == 0)
+                    and 0 < row['publish'] <= row['dequeue'] <= row['write_enter']
                     <= row['native_enter'] <= row['native_return'] <= row['write_finish']):
                 raise AssertionError({'sed_stage_order': row})
             if not row['publish'] <= row['enqueue_enter'] <= row['dequeue'] or row['enqueue_return'] < row['enqueue_enter']:

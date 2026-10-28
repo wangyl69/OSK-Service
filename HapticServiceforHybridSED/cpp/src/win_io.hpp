@@ -7,6 +7,27 @@
 #include <stdexcept>
 
 namespace hybrid {
+// One consumer, retained notification: no lost wake between checking a queue
+// and entering the wait. Never ResetEvent after checking the queue. Multiple
+// notifications may merge because the consumer drains queued work first.
+class WorkSignal {
+    HANDLE event_=nullptr;
+public:
+    WorkSignal():event_(CreateEventW(nullptr,FALSE,FALSE,nullptr)) {
+        if(!event_)throw std::runtime_error("CreateEvent (worker wake) failed");
+    }
+    WorkSignal(const WorkSignal&)=delete;
+    WorkSignal& operator=(const WorkSignal&)=delete;
+    ~WorkSignal(){CloseHandle(event_);}
+    void notify_one() noexcept {SetEvent(event_);}
+    void notify_all() noexcept {SetEvent(event_);} // Exactly one worker owns this wait.
+    bool wait(DWORD timeout) {
+        const auto result=WaitForSingleObject(event_,timeout);
+        if(result==WAIT_FAILED)
+            throw std::runtime_error("Worker event wait failed");
+        return result==WAIT_OBJECT_0;
+    }
+};
 // Owned, nonblocking HID Input read. Never free a pending OVERLAPPED or buffer.
 // Polling this completion does not wait for the MCU, leaving PLAY dispatch runnable.
 class AsyncReportRead {
@@ -44,27 +65,47 @@ public:
     }
 };
 // Cancel and join every pending operation before OVERLAPPED/buffers go out of scope.
-inline bool overlappedIo(HANDLE handle,void* buffer,DWORD size,bool write,DWORD timeout,
-                         DWORD& done,const std::atomic_bool& stop,bool honorStop=true) {
-    struct Event {HANDLE value;~Event(){if(value)CloseHandle(value);}} event{CreateEventW(nullptr,TRUE,FALSE,nullptr)};
-    if(!event.value)throw std::runtime_error("CreateEvent failed");
-    OVERLAPPED operation{};operation.hEvent=event.value;done=0;
+inline bool overlappedIoWithEvent(HANDLE event,HANDLE handle,void* buffer,DWORD size,bool write,DWORD timeout,
+                                  DWORD& done,const std::atomic_bool& stop,bool honorStop=true) {
+    // The caller owns this event exclusively. Every previous pending request
+    // must have completed/cancelled-and-joined before resetting or reusing it.
+    ResetEvent(event);
+    OVERLAPPED operation{};operation.hEvent=event;done=0;
     BOOL immediate=write ? WriteFile(handle,buffer,size,&done,&operation) : ReadFile(handle,buffer,size,&done,&operation);
     if(immediate)return true;
     if(GetLastError()!=ERROR_IO_PENDING)return false;
-    if(WaitForSingleObject(event.value,0)==WAIT_OBJECT_0)
+    if(WaitForSingleObject(event,0)==WAIT_OBJECT_0)
         return GetOverlappedResult(handle,&operation,&done,FALSE)!=FALSE;
     const auto deadline=std::chrono::steady_clock::now()+std::chrono::milliseconds(timeout);
     while(!honorStop||!stop) {
         const auto now=std::chrono::steady_clock::now();if(now>=deadline)break;
         const auto remaining=std::chrono::ceil<std::chrono::milliseconds>(deadline-now).count();
         const auto slice=static_cast<DWORD>(std::min<std::int64_t>(10,remaining));
-        const auto result=WaitForSingleObject(event.value,slice);
+        const auto result=WaitForSingleObject(event,slice);
         if(result==WAIT_OBJECT_0)return GetOverlappedResult(handle,&operation,&done,FALSE)!=FALSE;
         if(result==WAIT_FAILED)break;
     }
     CancelIoEx(handle,&operation);
     GetOverlappedResult(handle,&operation,&done,TRUE);
     return false;
+}
+class ReusableOverlappedIo {
+    HANDLE event_=nullptr;
+public:
+    ReusableOverlappedIo():event_(CreateEventW(nullptr,TRUE,FALSE,nullptr)) {
+        if(!event_)throw std::runtime_error("CreateEvent (reusable I/O) failed");
+    }
+    ReusableOverlappedIo(const ReusableOverlappedIo&)=delete;
+    ReusableOverlappedIo& operator=(const ReusableOverlappedIo&)=delete;
+    ~ReusableOverlappedIo(){CloseHandle(event_);}
+    bool perform(HANDLE handle,void* buffer,DWORD size,bool write,DWORD timeout,
+                 DWORD& done,const std::atomic_bool& stop,bool honorStop=true) {
+        return overlappedIoWithEvent(event_,handle,buffer,size,write,timeout,done,stop,honorStop);
+    }
+};
+inline bool overlappedIo(HANDLE handle,void* buffer,DWORD size,bool write,DWORD timeout,
+                         DWORD& done,const std::atomic_bool& stop,bool honorStop=true) {
+    ReusableOverlappedIo operation;
+    return operation.perform(handle,buffer,size,write,timeout,done,stop,honorStop);
 }
 }

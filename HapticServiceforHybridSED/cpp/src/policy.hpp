@@ -59,6 +59,8 @@ public:
 struct WaitTrace {
     std::uint64_t submitLockedUs=0,enqueuedUs=0,workerLockRequestUs=0,workerLockedUs=0,waitReturnedUs=0;
     std::uint32_t inputThread=0,workerThread=0;
+    std::uint64_t waitEnteredUs=0;
+    unsigned waitTimeoutMs=0,waitSignaled=0;
 };
 struct TraceSample {std::uint64_t sequence=0,receivedUs=0,completedUs=0,dequeuedUs=0,triggerUs=0;WaitTrace wait{};};
 struct TraceRing {

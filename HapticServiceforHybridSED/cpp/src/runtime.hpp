@@ -10,7 +10,7 @@ struct Options {
     unsigned waveform=1, intensity=1;
     unsigned keepaliveMs=250;
     std::string statusMode="auto";
-    std::string threadPriority="above-normal";
+    std::string threadPriority="highest";
     std::string idleWaitMode="fixed";
     bool mockFeatureUnavailable=false;
     bool mockQuiet=false;

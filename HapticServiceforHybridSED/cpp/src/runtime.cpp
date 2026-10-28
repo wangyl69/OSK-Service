@@ -6,7 +6,6 @@
 #include <sddl.h>
 #include <wtsapi32.h>
 #include <chrono>
-#include <condition_variable>
 #include <fstream>
 #include <filesystem>
 #include <iostream>
@@ -56,7 +55,7 @@ static void fail(const char* operation) {
     throw std::runtime_error(std::string(operation)+" error="+std::to_string(GetLastError()));
 }
 static int latencyPriority(const Options& options,const char* role) {
-    const auto requested=options.threadPriority=="above-normal" ? THREAD_PRIORITY_ABOVE_NORMAL : THREAD_PRIORITY_NORMAL;
+    const auto requested=options.threadPriority=="highest" ? THREAD_PRIORITY_HIGHEST : options.threadPriority=="above-normal" ? THREAD_PRIORITY_ABOVE_NORMAL : THREAD_PRIORITY_NORMAL;
     if(!SetThreadPriority(GetCurrentThread(),requested))
         log(std::string("Thread priority failed role=")+role+" error="+std::to_string(GetLastError()));
     const auto effective=GetThreadPriority(GetCurrentThread());
@@ -343,7 +342,7 @@ class Worker {
     std::atomic_uint64_t statusQueries_=0;
     std::mutex mutex_;
     std::mutex metricsMutex_;
-    std::condition_variable changed_;
+    WorkSignal changed_;
     FixedQueue<Queued,8> queue_;
     const bool traceEnabled_;
     std::thread thread_;
@@ -356,6 +355,7 @@ class Worker {
     Snapshot cached_;
     Samples queueTimes_,hidTimes_,totalTimes_,backgroundTimes_;
     TraceRing trace_;
+    TraceRing signals_; // Opt-in diagnostic ring, keyed by submit QPC timestamp.
     void state(const std::string& value){std::lock_guard lock(mutex_);state_=value;}
     void cache(const Snapshot& value){
         bool alert=false;
@@ -385,7 +385,10 @@ public:
             if(!queue_.tryPush({edge,receivedUs,wait})){++dropped;++overflow_;return;}
         }
         // Publish under lock, notify after release: a woken worker can acquire it.
+        const auto signalEnter=traceEnabled_?micros():0;
         changed_.notify_one();
+        const auto signalReturn=traceEnabled_?micros():0;
+        if(traceEnabled_){std::lock_guard lock(metricsMutex_);signals_.add(receivedUs,signalReturn,signalEnter);}
     }
     std::string status() {
         Samples q,h,t,b;Snapshot snap;
@@ -412,6 +415,7 @@ public:
         o<<"{\"ok\":true,\"state\":"<<jsonString(stateValue)<<",\"status_mode\":"<<jsonString(mode)
          <<",\"requested_thread_priority\":"<<jsonString(options_.threadPriority)
          <<",\"idle_wait_mode\":"<<jsonString(options_.idleWaitMode)
+         <<",\"worker_wake_mode\":\"native-event\""
          <<",\"input_thread_priority\":"<<inputPriority_.load()<<",\"hid_thread_priority\":"<<hidPriority_.load()
          <<",\"process_priority_class\":"<<GetPriorityClass(GetCurrentProcess())
          <<",\"query_thread_priority\":"<<GetThreadPriority(GetCurrentThread())
@@ -443,7 +447,8 @@ public:
         if(request=="trace") {
             if(!traceEnabled_)return "{\"ok\":false,\"error\":\"trace requires --latency-trace or --mock --mock-trace\"}";
             std::vector<TraceSample> samples;
-            {std::lock_guard lock(metricsMutex_);samples=trace_.snapshot();}
+            std::vector<TraceSample> signals;
+            {std::lock_guard lock(metricsMutex_);samples=trace_.snapshot();signals=signals_.snapshot();}
             std::ostringstream out;out<<"{\"ok\":true,\"clock\":\"QPC_microseconds\",\"samples\":[";
             bool first=true;for(const auto& item:samples){if(!first)out<<',';first=false;out<<'['<<item.sequence<<','<<item.receivedUs<<','<<item.completedUs<<']';}
             out<<"],\"stage_samples\":[";
@@ -451,8 +456,10 @@ public:
                 out<<'['<<item.sequence<<','<<item.receivedUs<<','<<item.dequeuedUs<<','<<item.triggerUs<<','<<item.completedUs<<']';}
             out<<"],\"wait_samples\":[";
             first=true;for(const auto& item:samples){if(!first)out<<',';first=false;const auto& w=item.wait;
-                out<<'['<<item.sequence<<','<<w.submitLockedUs<<','<<w.enqueuedUs<<','<<w.workerLockRequestUs<<','<<w.workerLockedUs<<','<<w.waitReturnedUs<<','<<w.inputThread<<','<<w.workerThread<<']';}
-            out<<"],\"wait_schema\":\"sequence,submit_locked,enqueue_stamp,worker_lock_request,worker_locked,wait_returned_with_lock,input_tid,worker_tid\""
+                out<<'['<<item.sequence<<','<<w.submitLockedUs<<','<<w.enqueuedUs<<','<<w.workerLockRequestUs<<','<<w.workerLockedUs<<','<<w.waitReturnedUs<<','<<w.inputThread<<','<<w.workerThread<<','<<w.waitEnteredUs<<','<<w.waitTimeoutMs<<','<<w.waitSignaled<<']';}
+            out<<"],\"signal_samples\":[";
+            first=true;for(const auto& item:signals){if(!first)out<<',';first=false;out<<'['<<item.receivedUs<<','<<item.dequeuedUs<<','<<item.completedUs<<']';}
+            out<<"],\"signal_schema\":\"submit,notify_enter,notify_return\",\"wait_schema\":\"sequence,submit_locked,enqueue_stamp,worker_lock_request,worker_locked,wait_returned_before_lock,input_tid,worker_tid,wait_enter,timeout_ms,signaled\""
                <<",\"completion_kind\":"<<jsonString(options_.mock?"mock":"hid_write_complete")
                <<",\"stage_schema\":"<<jsonString(options_.mock?"sequence,submit,dequeue,trigger_entry,mock_complete":"sequence,submit,dequeue,trigger_entry,hid_write_complete")<<"}";return out.str();
         }
@@ -464,7 +471,7 @@ public:
             {std::lock_guard lock(mutex_);revision=requested_;}
             {
                 std::lock_guard metrics(metricsMutex_);
-                queueTimes_=Samples{};hidTimes_=Samples{};totalTimes_=Samples{};backgroundTimes_=Samples{};trace_=TraceRing{};
+                queueTimes_=Samples{};hidTimes_=Samples{};totalTimes_=Samples{};backgroundTimes_=Samples{};trace_=TraceRing{};signals_=TraceRing{};
             }
             return "{\"ok\":true,\"queued\":true,\"requested_revision\":"+std::to_string(revision)+"}";
         }
@@ -499,7 +506,7 @@ public:
                 std::unique_lock lock(mutex_);
                 if(!enabled_||paused||fault_) {
                     state_=(!enabled_||paused)?"PAUSED":"FAULT";
-                    changed_.wait_for(lock,std::chrono::milliseconds(100),[&]{return stopping||recover_;});
+                    lock.unlock();changed_.wait(100);lock.lock();
                     if(!enabled_||paused)continue;
                     if(fault_&&!recover_)continue;
                 }
@@ -517,7 +524,9 @@ public:
                 auto verified=GetTickCount64(),lastIo=verified,lastStatus=verified;
                 bool pendingVerify=false;
                 std::uint64_t waitReturnedUs=0;
-                while(active()) {
+                std::uint64_t waitEnteredUs=0;
+                unsigned waitTimeoutMs=0,waitSignaled=0;
+                while(!stopping) {
                     if(device.statusPending()) {
                         phase="async_status";
                         if(auto completed=device.pollStatus()) {
@@ -535,6 +544,9 @@ public:
                     {
                         std::unique_lock lock(mutex_);
                         const auto lockedUs=traceEnabled_?micros():0;
+                        // Check state with this acquisition, instead of an
+                        // unmeasured active() lock before every queue lookup.
+                        if(!enabled_||recover_||paused||stopping)break;
                         auto now=GetTickCount64();
                         work=chooseWork(!queue_.empty(),requested_!=applied_,diagnose_&&now-lastStatus>=1000,now-verified,now-lastIo,options_.keepaliveMs);
                         // An in-flight ACK never blocks PLAY. Serialize all other
@@ -542,7 +554,7 @@ public:
                         // diagnose requests and rate-limit real reads to <=1 Hz.
                         if(device.statusPending())work=queue_.empty()?Work::Wait:Work::Play;
                         wave=options_.waveform;intensity=options_.intensity;configRevision=requested_;
-                        if(work==Work::Play){event=queue_.front();queue_.pop_front();if(traceEnabled_){dequeuedUs=micros();event->wait.workerLockRequestUs=lockRequestUs;event->wait.workerLockedUs=lockedUs;event->wait.waitReturnedUs=waitReturnedUs;event->wait.workerThread=GetCurrentThreadId();}waitReturnedUs=0;if(now-verified>=10000)++backgroundSkipped_;}
+                        if(work==Work::Play){event=queue_.front();queue_.pop_front();if(traceEnabled_){dequeuedUs=micros();event->wait.workerLockRequestUs=lockRequestUs;event->wait.workerLockedUs=lockedUs;event->wait.waitReturnedUs=waitReturnedUs;event->wait.workerThread=GetCurrentThreadId();event->wait.waitEnteredUs=waitEnteredUs;event->wait.waitTimeoutMs=waitTimeoutMs;event->wait.waitSignaled=waitSignaled;}waitReturnedUs=0;waitEnteredUs=0;waitTimeoutMs=0;waitSignaled=0;if(now-verified>=10000)++backgroundSkipped_;}
                         if(work==Work::Wait){
                             // Deadline wait is opt-in: fewer wakeups can allow deeper
                             // CPU idle states. Preserve fixed 10ms until first-key A/B
@@ -552,7 +564,14 @@ public:
                                 ? idleWaitMs(device.statusPending(),requested_!=applied_,diagnose_,
                                              now-verified,now-lastIo,now-lastStatus,options_.keepaliveMs)
                                 : 10u;
-                            changed_.wait_for(lock,std::chrono::milliseconds(delay));
+                            // 2026-10-26: wait outside the queue mutex. A retained
+                            // native event avoids condition_variable's hidden
+                            // re-acquire; the next loop measures explicit lock
+                            // acquisition separately. Queue drain remains first.
+                            lock.unlock();
+                            if(traceEnabled_){waitEnteredUs=micros();waitTimeoutMs=delay;}
+                            const bool signaled=changed_.wait(delay);
+                            if(traceEnabled_)waitSignaled=signaled?1u:0u;
                             if(traceEnabled_)waitReturnedUs=micros();
                             continue;
                         }
@@ -600,7 +619,15 @@ public:
                 if(stopping)break;
                 if(recover_||!enabled_||paused)continue;
                 if(fault_)continue;
-                if(failures_) changed_.wait_for(lock,std::chrono::milliseconds(retryDelay(failures_)),[&]{return stopping||recover_||!enabled_||paused;});
+                if(failures_) {
+                    // Keep the full retry deadline: a diagnose/set notification
+                    // must not accelerate repeated failed hardware reconnects.
+                    const auto deadline=GetTickCount64()+retryDelay(failures_);
+                    while(!stopping&&!recover_&&enabled_&&!paused) {
+                        const auto now=GetTickCount64();if(now>=deadline)break;
+                        lock.unlock();changed_.wait(static_cast<DWORD>(deadline-now));lock.lock();
+                    }
+                }
             }
         }
         state("STOPPED");
@@ -627,9 +654,18 @@ static void controlServer(HANDLE pipe,Worker& worker) {
 }
 int runControl(const Options& options,const std::string& command) {
     auto name=path(options.sedPipe+L"Control");
-    if(!WaitNamedPipeW(name.c_str(),2000))fail("Wait control pipe");
-    Handle pipe(CreateFileW(name.c_str(),GENERIC_READ|GENERIC_WRITE,0,nullptr,OPEN_EXISTING,FILE_FLAG_OVERLAPPED,nullptr));
-    if(!pipe.valid())fail("Open control pipe");
+    Handle pipe;
+    const auto deadline=GetTickCount64()+2000;
+    while(!pipe.valid()) {
+        const auto now=GetTickCount64();
+        if(now>=deadline){SetLastError(ERROR_SEM_TIMEOUT);fail("Wait control pipe");}
+        if(!WaitNamedPipeW(name.c_str(),static_cast<DWORD>(deadline-now)))fail("Wait control pipe");
+        pipe.reset(CreateFileW(name.c_str(),GENERIC_READ|GENERIC_WRITE,0,nullptr,OPEN_EXISTING,FILE_FLAG_OVERLAPPED,nullptr));
+        // Concurrent status/diagnose clients can both observe availability.
+        // Retry only that race, within the original 2s control deadline. This
+        // does not add retries or sleeps to the separate haptic data pipe.
+        if(!pipe.valid()&&GetLastError()!=ERROR_PIPE_BUSY)fail("Open control pipe");
+    }
     DWORD readMode=PIPE_READMODE_MESSAGE;
     if(!SetNamedPipeHandleState(pipe.get(),&readMode,nullptr,nullptr))fail("Set control message mode");
     DWORD done=0;auto request=command;
@@ -648,6 +684,9 @@ int runBackend(const Options& options) {
     Security security;
     Handle pipe(server(options.sedPipe,false,security));
     Handle controls(server(options.sedPipe+L"Control",true,security,true));
+    // 2026-10-26: keep one completed-I/O event across reads/connections instead
+    // of creating and closing a kernel handle for every category byte.
+    ReusableOverlappedIo pipeRead;
     Worker worker(options); worker.start();
     std::thread controlThread([&]{try{controlServer(controls.get(),worker);}catch(const std::exception& e){log(std::string("Control server failed: ")+e.what());stopping=true;}});
     worker.inputPriority(latencyPriority(options,"pipe-input"));
@@ -665,7 +704,7 @@ int runBackend(const Options& options) {
             log("HybridSED connected");
             while(!stopping) {
                 std::array<std::uint8_t,128> bytes{}; DWORD size=0;
-                if(!io(pipe.get(),bytes.data(),static_cast<DWORD>(bytes.size()),false,24*60*60*1000,size)) break;
+                if(!pipeRead.perform(pipe.get(),bytes.data(),static_cast<DWORD>(bytes.size()),false,24*60*60*1000,size,stopping)) break;
                 if(!size) break;
                 if(session!=WTSGetActiveConsoleSessionId()) {log("Active desktop changed; closing old publisher connection");break;}
                 for(DWORD i=0;i<size;++i) {

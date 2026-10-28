@@ -1,8 +1,37 @@
 param([ValidateRange(0,8)][int]$LoadWorkers = 0,
       [ValidateRange(0,100)][int]$IdleWakeCount = 40,
       [ValidateSet('fixed','deadline')][string]$IdleWaitMode = 'fixed',
-      [switch]$RequireKernelTrace)
+      [ValidateSet('standard','cadence','typing','rapid','rapid200','diagnostics','bursts','idle5s','idle15s')][string]$ScenarioSet = 'standard',
+      [ValidateRange(1,30)][int]$ScenarioBatches = 5,
+      [ValidateRange(0,100)][int]$IdleSamples = 0,
+      [ValidateRange(1,20)][int]$CadenceCycles = 1,
+      [ValidateSet('normal','above-normal','highest')][string]$ThreadPriority = 'highest',
+      [ValidateSet('normal','highest')][string]$InjectorPriority = 'normal',
+      [ValidateRange(0,100)][int]$StopPreHookMs = 0,
+      [ValidateRange(0,100)][int]$StopAnyStageMs = 0,
+      [switch]$ExtraScenarios,
+      [switch]$RequireKernelTrace,
+      [switch]$PowerDetails,
+      [switch]$Elevate)
 $ErrorActionPreference = 'Stop'
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if ($Elevate -and !$isAdmin) {
+    $launchArguments = @('-NoProfile','-ExecutionPolicy','Bypass','-File',('"' + $PSCommandPath + '"'),
+        '-LoadWorkers',"$LoadWorkers",'-IdleWakeCount',"$IdleWakeCount",'-IdleWaitMode',$IdleWaitMode,
+        '-ScenarioSet',$ScenarioSet,'-ScenarioBatches',"$ScenarioBatches",'-IdleSamples',"$IdleSamples",'-CadenceCycles',"$CadenceCycles",'-ThreadPriority',$ThreadPriority,'-InjectorPriority',$InjectorPriority,'-StopPreHookMs',"$StopPreHookMs",'-StopAnyStageMs',"$StopAnyStageMs")
+    if ($RequireKernelTrace) { $launchArguments += '-RequireKernelTrace' }
+    if ($ExtraScenarios) { $launchArguments += '-ExtraScenarios' }
+    if ($PowerDetails) { $launchArguments += '-PowerDetails' }
+    Write-Output 'Requesting normal Windows UAC elevation for this capture only.'
+    $captureProcess = Start-Process -FilePath "$PSHOME/powershell.exe" -Verb RunAs -WindowStyle Hidden -ArgumentList $launchArguments -PassThru -Wait
+    exit $captureProcess.ExitCode
+}
+if ($CadenceCycles -ne 1 -and $ScenarioSet -ne 'cadence') {
+    throw 'CadenceCycles requires ScenarioSet cadence.'
+}
+if ($ExtraScenarios -and $ScenarioSet -eq 'cadence') {
+    throw 'ExtraScenarios applies only to the standard scenario set.'
+}
 function Invoke-Wpr([string[]]$CommandArguments) {
     # WPR writes harmless profile-mode notices to stderr. Windows PowerShell
     # turns those into ErrorRecords; judge native success by the exit code.
@@ -29,25 +58,60 @@ $metadata = [ordered]@{
     is_admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
     profile = $profile
     service_idle_wait_mode = $IdleWaitMode
+    scenario_set = $ScenarioSet
+    scenario_batches = $ScenarioBatches
+    idle_samples = $IdleSamples
+    cadence_cycles = $CadenceCycles
+    thread_priority = $ThreadPriority
+    injector_priority = $InjectorPriority
+    stop_pre_hook_ms = $StopPreHookMs
+    stop_any_stage_ms = $StopAnyStageMs
+    power_details = [bool]$PowerDetails
+    extra_scenarios = [bool]$ExtraScenarios
 }
+$pipelineArguments = @((Join-Path $projectDir 'tests/check_real_pipeline.py'),
+    '--with-osk', '--quiet', '--sed-trace', '--status-mode', 'interrupt',
+    '--mock-status-delay-ms', '200', '--service-idle-wait', $IdleWaitMode,
+    '--scenario-set', $ScenarioSet,
+    '--scenario-batches', "$ScenarioBatches",
+    '--cadence-cycles', "$CadenceCycles",
+    '--thread-priority', $ThreadPriority,
+    '--injector-priority', $InjectorPriority,
+    '--stop-prehook-ms', "$StopPreHookMs",
+    '--stop-any-stage-ms', "$StopAnyStageMs",
+    '--load-workers', "$LoadWorkers", '--idle-wake-count', "$IdleWakeCount", '--run-label', $runId)
+# Include the 500Hz target/burst phase where the 2026-10-26 queue tail occurred.
+if ($ExtraScenarios) { $pipelineArguments += '--extra-scenarios' }
+if ($PowerDetails) { $pipelineArguments += '--cpu-snapshots' }
+if ($IdleSamples -gt 0) { $pipelineArguments += @('--idle-samples', "$IdleSamples") }
+$metadata.pipeline_arguments = $pipelineArguments
 try {
     $details = Invoke-Wpr @('-profiledetails', $profile)
     $details.Lines | Out-File (Join-Path $outputDir 'wpr-profile.txt') -Encoding utf8
     if ($details.ExitCode -ne 0) { throw 'WPR profile validation failed' }
-    $startOutput = Invoke-Wpr @('-start', $profile, '-filemode', '-instancename', $instance)
+    $startArguments = @('-start', $profile)
+    if ($PowerDetails) { $startArguments += @('-start', 'Power') }
+    $startArguments += @('-filemode', '-instancename', $instance)
+    & powercfg /getactivescheme | Out-File (Join-Path $outputDir 'power-scheme.txt') -Encoding utf8
+    $startOutput = Invoke-Wpr $startArguments
     $startOutput.Lines | Out-File (Join-Path $outputDir 'wpr-start.txt') -Encoding utf8
     $metadata.wpr_start_exit = $startOutput.ExitCode
     $recordingStarted = $startOutput.ExitCode -eq 0
     $metadata.trace_started = $recordingStarted
     if (!$recordingStarted) {
+        if ($RequireKernelTrace) {
+            Write-Warning 'Kernel recording unavailable; required capture stopped before keyboard injection. No policy/elevation changes.'
+            throw 'Kernel trace was required but could not start; see wpr-start.txt'
+        }
         Write-Warning 'Kernel recording unavailable. No policy/elevation changes; proceeding with application stage timing only.'
-        if ($RequireKernelTrace) { throw 'Kernel trace was required but could not start; see wpr-start.txt' }
     }
-    & py -3 (Join-Path $projectDir 'tests/check_real_pipeline.py') --with-osk --quiet --sed-trace --status-mode interrupt --mock-status-delay-ms 200 --service-idle-wait $IdleWaitMode --load-workers $LoadWorkers --idle-wake-count $IdleWakeCount --run-label $runId
+    & py -3 @pipelineArguments
     $metadata.pipeline_exit = $LASTEXITCODE
     if ($LASTEXITCODE -ne 0) { throw 'Pipeline failed; partial timing data retained' }
     & py -3 (Join-Path $projectDir 'tests/analyze_latency.py') $outputDir --output (Join-Path $outputDir 'stage-summary.json') | Out-File (Join-Path $outputDir 'stage-summary-console.txt') -Encoding utf8
     if ($LASTEXITCODE -ne 0) { throw 'Timing analysis failed' }
+    & py -3 (Join-Path $projectDir 'tests/analyze_wait_timeline.py') $outputDir | Out-File (Join-Path $outputDir 'wait-timeline-console.txt') -Encoding utf8
+    if ($LASTEXITCODE -ne 0) { throw 'Wait timeline validation failed' }
 } finally {
     if ($recordingStarted) {
         $stopOutput = Invoke-Wpr @('-stop', (Join-Path $outputDir 'scheduler.etl'), '-instancename', $instance)

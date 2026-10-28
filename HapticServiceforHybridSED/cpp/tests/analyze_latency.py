@@ -98,6 +98,17 @@ def main():
                         if any(r['wake_signal_return'] < r['enqueue_return'] for r in rows):
                             raise ValueError('Invalid native event signal timestamp')
                         stages['queue_wait_after_wake_signal_return_lower_bound_us'] = [max(0, r['dequeue'] - r['wake_signal_return']) for r in rows]
+                if 'service_submit_locked' in rows[0]:
+                    for row in rows:
+                        if not row['service_submit'] <= row['service_submit_locked'] <= row['service_enqueue_stamp'] <= row['service_dequeue']:
+                            raise ValueError('Invalid submission lock boundaries')
+                        if not row['service_worker_lock_request'] <= row['service_worker_locked'] <= row['service_dequeue']:
+                            raise ValueError('Invalid worker lock boundaries')
+                    for name, begin, end in (
+                        ('service_submit_lock_us', 'service_submit', 'service_submit_locked'),
+                        ('service_worker_lock_us', 'service_worker_lock_request', 'service_worker_locked'),
+                        ('service_after_enqueue_stamp_us', 'service_enqueue_stamp', 'service_dequeue')):
+                        stages[name] = [r[end] - r[begin] for r in rows]
             except (KeyError, TypeError, ValueError) as exc:
                 parser.error(str(path) + ': ' + str(exc))
         load_workers = data.get('unrestricted_cpu_load_workers', 0)
@@ -105,6 +116,10 @@ def main():
         group_name += '/mode-' + data.get('requested_status_mode', 'unrecorded')
         group_name += '/mock-ack-' + str(data.get('mock_status_delay_ms', 0)) + 'ms'
         group_name += '/service-wait-' + data.get('service_idle_wait_mode', 'unrecorded')
+        group_name += '/scenario-' + data.get('scenario_set', 'standard')
+        group_name += '/worker-wake-' + data.get('service_worker_wake_mode',
+            data.get('final_status', {}).get('worker_wake_mode', 'condition-variable'))
+        group_name += '/sed-queue-' + data.get('sed_queue_implementation', 'BlockingCollection')
         if data.get('sed_sender_native_wake'):
             group_name += '/native-wake'
         if data.get('sed_stage_trace_enabled'):
@@ -123,7 +138,7 @@ def main():
             profile['sed_gc_summary'] = data['sed_gc_summary']
         pooled = groups.setdefault(group_name, {name: [] for name in stages})
         for name, values in stages.items():
-            pooled[name].extend(values)
+            pooled.setdefault(name, []).extend(values)
     result = {
         'scope': 'DLL entry -> Service submit after pipe read/parsing -> mock completion; no physical HID/I2C',
         'note': 'The upstream segment still combines Windows hook delivery, SED, and pipe delivery; per-stage percentiles must not be added.',

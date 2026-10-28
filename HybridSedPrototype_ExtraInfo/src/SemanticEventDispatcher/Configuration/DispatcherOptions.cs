@@ -53,8 +53,10 @@ public sealed class DispatcherOptions
     /// </summary>
     public int HapticPipeConnectTimeoutMs { get; set; } = 20;
 
-    /// <summary>AboveNormal for the hook and haptic sender only; false restores Normal.</summary>
+    /// <summary>Enable configured priority for the hook and sender only; false restores Normal.</summary>
     public bool LatencyThreadPriorityBoost { get; set; } = true;
+    /// <summary>normal, above-normal, or highest; process priority is unchanged.</summary>
+    public string LatencyThreadPriority { get; set; } = "highest";
 
     /// <summary>Optional local memory-map name for bounded per-event timing. Empty disables diagnostics.</summary>
     public string HapticLatencyTraceName { get; set; } = "";

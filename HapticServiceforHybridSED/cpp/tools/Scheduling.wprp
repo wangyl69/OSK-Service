@@ -13,6 +13,7 @@
         <Keyword Value="ReadyThread"/>
         <Keyword Value="DPC"/>
         <Keyword Value="Interrupt"/>
+        <Keyword Value="ThreadPriority"/>
       </Keywords>
       <Stacks>
         <Stack Value="CSwitch"/>

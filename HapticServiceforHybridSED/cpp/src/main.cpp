@@ -146,7 +146,7 @@ int wmain(int argc,wchar_t** argv) {
                     " --mock-status-delay-ms 0..1000 (mock runtime interrupt ACK delay only)\n"
                     " --idle-wait fixed|deadline (default fixed; deadline is an opt-in comparison)\n"
                     " --latency-trace (bounded QPC/thread diagnostics; real HID or mock, default off)\n"
-                    " --thread-priority normal|above-normal (dedicated input/HID threads only)\n"
+                    " --thread-priority normal|above-normal|highest (dedicated input/HID threads only)\n"
                     " --control \"status|diagnose|set waveform N|set intensity N|set keepalive N|session open|session close|recover|mode MODE|metrics reset\"\n";
                 return 0;
             }else throw std::runtime_error("Unknown argument");
@@ -155,7 +155,7 @@ int wmain(int argc,wchar_t** argv) {
             throw std::runtime_error("Waveform/intensity out of range");
         if(options.keepaliveMs && options.keepaliveMs<100)throw std::runtime_error("keepalive must be 0 or 100..10000");
         if(options.statusMode!="auto"&&options.statusMode!="feature"&&options.statusMode!="interrupt"&&options.statusMode!="write-only")throw std::runtime_error("Unknown status mode");
-        if(options.threadPriority!="normal"&&options.threadPriority!="above-normal")throw std::runtime_error("Unknown thread priority");
+        if(options.threadPriority!="normal"&&options.threadPriority!="above-normal"&&options.threadPriority!="highest")throw std::runtime_error("Unknown thread priority");
         if(options.mockFeatureUnavailable&&!options.mock)throw std::runtime_error("mock option requires --mock");
         if(options.mockQuiet&&!options.mock)throw std::runtime_error("mock-quiet requires --mock");
         if(options.mockTrace&&!options.mock)throw std::runtime_error("mock-trace requires --mock");

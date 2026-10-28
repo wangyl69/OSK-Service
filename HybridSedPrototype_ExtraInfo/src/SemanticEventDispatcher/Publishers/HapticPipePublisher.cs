@@ -22,7 +22,8 @@ public sealed class HapticPipePublisher : ISemanticEventPublisher, IDisposable
     private readonly Func<CancellationToken, Task<NamedPipeClientStream>> _connect;
     private NamedPipeClientStream? _pipe;
     private readonly CancellationTokenSource _stop = new();
-    private readonly BlockingCollection<(byte Code, long Created, long Trace)> _queue = new(8);
+    private readonly BlockingCollection<(byte Code, long Created, long Trace)>? _queue;
+    private readonly HapticSendRing? _nativeQueue;
     private readonly HapticLatencyTrace? _trace;
     private readonly AutoResetEvent? _senderAvailable;
     private readonly Thread _sender;
@@ -71,14 +72,20 @@ public sealed class HapticPipePublisher : ISemanticEventPublisher, IDisposable
         _connect = connect ?? ConnectPipe;
         _trace = HapticLatencyTrace.TryCreate(value.HapticLatencyTraceName, logger);
         _senderAvailable = value.HapticSenderNativeWake ? new AutoResetEvent(false) : null;
-        _logger.LogInformation("Haptic sender wake Mode={WakeMode}",
-            _senderAvailable is null ? "BlockingCollection" : "NativeEvent");
+        // 2026-10-26: the native wake path already owns its notification.
+        // A fixed ring avoids BlockingCollection's redundant semaphore wake
+        // and ConcurrentQueue segment allocation. Keep the legacy A/B path.
+        _queue = _senderAvailable is null ? new(8) : null;
+        _nativeQueue = _senderAvailable is null ? null : new();
+        _logger.LogInformation("Haptic sender wake Mode={WakeMode} Queue={QueueMode}",
+            _senderAvailable is null ? "BlockingCollection" : "NativeEvent",
+            _nativeQueue is null ? "BlockingCollection" : "FixedRing");
 
         // A hot-path consumer must not compete with WMI/GC continuations for
         // ThreadPool scheduling on every key. Waiting here never blocks hooks.
         _sender = new Thread(() =>
         {
-            LatencyThreadScheduling.Apply(value.LatencyThreadPriorityBoost, _logger, "haptic-sender");
+            LatencyThreadScheduling.Apply(value.LatencyThreadPriorityBoost, _logger, "haptic-sender", value.LatencyThreadPriority);
             Send();
         })
         {
@@ -125,7 +132,7 @@ public sealed class HapticPipePublisher : ISemanticEventPublisher, IDisposable
             try
             {
                 _trace?.EnqueueStarting(trace);
-                queued = _queue.TryAdd(((byte)hapticEvent, created, trace));
+                queued = TryAdd(((byte)hapticEvent, created, trace));
             }
             catch (InvalidOperationException) { /* CompleteAdding raced shutdown. */ }
         }
@@ -221,13 +228,13 @@ public sealed class HapticPipePublisher : ISemanticEventPublisher, IDisposable
             // Exceptions escaping a dedicated Thread would terminate the whole
             // process. Keep normal keyboard dispatch alive and make a stopped
             // sender explicit rather than silently accumulating new requests.
-            _queue.CompleteAdding();
+            CompleteAdding();
             _logger.LogCritical(ex, "Haptic pipe sender stopped unexpectedly; restart Dispatcher after correcting the endpoint/configuration.");
         }
         finally
         {
             _pipe?.Dispose(); _pipe = null;
-            while (_queue.TryTake(out var item))
+            while (TryTake(out var item))
             { CountDrop(ref _shutdownDropped); _trace?.Complete(item.Trace, HapticLatencyTrace.Shutdown); }
         }
     }
@@ -241,20 +248,35 @@ public sealed class HapticPipePublisher : ISemanticEventPublisher, IDisposable
         // observed tail, but cannot guarantee Windows thread scheduling time.
         if (_senderAvailable is null)
         {
-            foreach (var item in _queue.GetConsumingEnumerable(_stop.Token)) yield return item;
+            foreach (var item in _queue!.GetConsumingEnumerable(_stop.Token)) yield return item;
             yield break;
         }
         WaitHandle[] handles = [_senderAvailable, _stop.Token.WaitHandle];
         while (true)
         {
             _stop.Token.ThrowIfCancellationRequested();
-            if (_queue.TryTake(out var item)) { yield return item; continue; }
-            if (_queue.IsCompleted) yield break;
+            if (TryTake(out var item)) { yield return item; continue; }
+            if (_nativeQueue!.IsCompleted) yield break;
             // Drain before sleeping. An auto-reset event remembers a signal
             // arriving between the empty check and WaitAny; signals may merge
             // safely because the next iteration drains every queued item.
             WaitHandle.WaitAny(handles);
         }
+    }
+
+    private bool TryAdd((byte Code, long Created, long Trace) item) =>
+        _nativeQueue?.TryAdd(item) ?? _queue!.TryAdd(item);
+
+    private bool TryTake(out (byte Code, long Created, long Trace) item)
+    {
+        if (_nativeQueue is not null) return _nativeQueue.TryTake(out item);
+        return _queue!.TryTake(out item);
+    }
+
+    private void CompleteAdding()
+    {
+        if (_nativeQueue is not null) _nativeQueue.CompleteAdding();
+        else _queue!.CompleteAdding();
     }
 
     private static long AgeUs(long started) => Stopwatch.GetElapsedTime(started).Ticks / 10;
@@ -328,17 +350,56 @@ public sealed class HapticPipePublisher : ISemanticEventPublisher, IDisposable
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
-        _queue.CompleteAdding();
+        CompleteAdding();
         _stop.Cancel();
         _sender.Join();
         _reporter.GetAwaiter().GetResult();
         ReportStatistics();
         _stop.Dispose();
-        _queue.Dispose();
+        _queue?.Dispose();
         _senderAvailable?.Dispose();
         _trace?.Dispose();
         _logger.LogInformation("Haptic publisher stopped. Dropped={Dropped}", _dropped);
     }
+}
+
+// Bounded, allocation-free storage after construction. Publish may have more
+// than one caller, so use a short monitor rather than assuming SPSC ordering.
+// Never hold this lock over pipe I/O, logging, notification, or native waiting.
+internal sealed class HapticSendRing
+{
+    private readonly object _sync = new();
+    private readonly (byte Code, long Created, long Trace)[] _items = new (byte, long, long)[8];
+    private int _head, _count;
+    private bool _completed;
+
+    internal bool TryAdd((byte Code, long Created, long Trace) item)
+    {
+        lock (_sync)
+        {
+            if (_completed) throw new InvalidOperationException("Haptic sender completed.");
+            if (_count == _items.Length) return false;
+            _items[(_head + _count) % _items.Length] = item;
+            ++_count;
+            return true;
+        }
+    }
+
+    internal bool TryTake(out (byte Code, long Created, long Trace) item)
+    {
+        lock (_sync)
+        {
+            if (_count == 0) { item = default; return false; }
+            item = _items[_head];
+            _items[_head] = default;
+            _head = (_head + 1) % _items.Length;
+            --_count;
+            return true;
+        }
+    }
+
+    internal bool IsCompleted { get { lock (_sync) return _completed && _count == 0; } }
+    internal void CompleteAdding() { lock (_sync) _completed = true; }
 }
 
 internal readonly record struct HapticPipeStatistics(long Published, long Enqueued, long Sent,

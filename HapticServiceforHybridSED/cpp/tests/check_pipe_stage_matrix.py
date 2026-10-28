@@ -77,7 +77,7 @@ class Writer:
         K.CloseHandle(self.event)
 
 
-def profile(workers, label='20261023'):
+def profile(workers, label='20261023', extra_scenarios=False):
     directory = features.ROOT / f'logs/pipe-stages-load{workers}-{label}'
     directory.mkdir(parents=True, exist_ok=True)
     features.REPORT = directory
@@ -87,9 +87,15 @@ def profile(workers, label='20261023'):
     contenders = []
     stop_queries = threading.Event()
     query_thread = None
-    result = {'scope': __doc__, 'workers': workers, 'source': 'direct_overlapped_pipe_client', 'trials': {}, 'events': []}
+    result = {'scope': __doc__, 'workers': workers, 'source': 'direct_overlapped_pipe_client',
+              'overload_scenarios_enabled': extra_scenarios, 'trials': {}, 'events': []}
     try:
         backend.wait(lambda s: s['ready'])
+        priority = backend.control('status')
+        result['verified_service_priorities'] = {key: priority[key] for key in
+            ('input_thread_priority', 'hid_thread_priority', 'query_thread_priority', 'process_priority_class')}
+        assert priority['input_thread_priority'] == priority['hid_thread_priority'] == 2
+        assert priority['query_thread_priority'] == 0 and priority['process_priority_class'] == 32
         writer = Writer(backend.pipe)
         writer.send()
         backend.wait(lambda s: s['play_sent'] == 1)
@@ -140,8 +146,9 @@ def profile(workers, label='20261023'):
         trial('20hz', 0.05)
         trial('100hz', 0.01)
         trial('200hz', 0.005)
-        trial('500hz', 0.002)
-        trial('four_byte_bursts', 0.02, burst=4)
+        if extra_scenarios:
+            trial('500hz', 0.002)
+            trial('four_byte_bursts', 0.02, burst=4)
         trial('diagnostics_200hz', 0.005, queries=True)
         for index in range(10): trial(f'soak_{index}', 0.01, queries=index % 2 == 0)
         result['stages_us'] = stages(result['events'])
@@ -179,8 +186,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--run-label', default='20261023')
     parser.add_argument('--workers', nargs='+', type=int, choices=range(9), default=[0,4,8])
+    parser.add_argument('--extra-scenarios', action='store_true', help='Opt-in 500Hz/four-byte overload; excluded by default')
     args = parser.parse_args()
-    results = [profile(workers, args.run_label) for workers in args.workers]
+    results = [profile(workers, args.run_label, args.extra_scenarios) for workers in args.workers]
     output = features.ROOT / f'logs/pipe-stages-summary-{args.run_label}.json'
     output.write_text(json.dumps({'scope': __doc__, 'profiles': results}, indent=2), encoding='utf-8')
     print(f'PASS: {sum(len(r["events"]) for r in results)} direct-pipe requests; mock HID.', flush=True)

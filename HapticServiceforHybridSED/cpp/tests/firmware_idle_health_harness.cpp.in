@@ -1,0 +1,74 @@
+#include <cstdint>
+#include <cstdio>
+#include <iostream>
+#include <stdexcept>
+#include <vector>
+// PRODUCTION_CONFIG
+using aw_motor_name=int;
+struct haptic_hv {};
+static haptic_hv motors[APP_AW_DEVICE_COUNT];
+static bool selected[APP_AW_DEVICE_COUNT],ready[APP_AW_DEVICE_COUNT];
+static int currentMotor,failMotor=-1,recoveries;
+static bool pendingTrigger,pendingRaw,arrivalDuringProbe;
+static std::vector<int> reads;
+[[maybe_unused]] static const char* g_i2c_phase_tag;
+#define AW_FALSE 0
+#define AW_SUCCESS 0
+#define AW_I2C_BYTE_ONE 1
+#define AW8693XS_REG_SYSST 1
+#define APP_LOG_HAPTIC_WARN(...) ((void)0)
+static uint32_t s_playback_health_counter;
+static uint8_t s_idle_health_check_pending,s_idle_health_motor_index;
+static int APP_HapticRuntime_HasPendingTrigger(){return pendingTrigger;}
+static int APP_I2CHID_HasPendingOutput(){return pendingRaw;}
+static aw_motor_name haptic_hv_get_current_motor(){return currentMotor;}
+static void haptic_hv_change_motor(aw_motor_name motor){currentMotor=motor;}
+static bool APP_MotorSelect_IsPlaybackSelected(int motor){return selected[motor];}
+static haptic_hv* haptic_hv_get_motor_handle(int motor){return &motors[motor];}
+static bool haptic_hv_motor_is_ready(int motor){return ready[motor];}
+static int haptic_hv_i2c_reads(uint8_t,uint8_t*,uint16_t){
+    reads.push_back(currentMotor);
+    if(arrivalDuringProbe)pendingTrigger=true;
+    return currentMotor==failMotor?-1:AW_SUCCESS;
+}
+static void APP_I2C_FullBusRecovery(){++recoveries;}
+uint8_t APP_HapticRecovery_RunIdleHealthCheck(void);
+// PRODUCTION_FUNCTIONS
+static void check(bool value,const char* reason){if(!value)throw std::runtime_error(reason);}
+static void reset(){
+    s_playback_health_counter=0;s_idle_health_check_pending=0;s_idle_health_motor_index=0;
+    pendingTrigger=pendingRaw=arrivalDuringProbe=false;failMotor=-1;recoveries=0;
+    currentMotor=APP_AW_DEVICE_COUNT-1;reads.clear();
+    for(unsigned i=0;i<APP_AW_DEVICE_COUNT;++i){selected[i]=i<2;ready[i]=true;}
+}
+static void due(){for(unsigned i=0;i<APP_KB_HEALTH_CHECK_PERIOD;++i)APP_HapticRecovery_RunPlaybackHealthCheck();}
+static void step(){auto before=reads.size();check(APP_HapticRecovery_RunIdleHealthCheck()==1,"healthy step failed");check(reads.size()-before<=1,"more than one motor probed per step");check(currentMotor==APP_AW_DEVICE_COUNT-1,"selected motor not restored");}
+int main(){try{
+    reset();
+    for(unsigned i=1;i<APP_KB_HEALTH_CHECK_PERIOD;++i){APP_HapticRecovery_RunPlaybackHealthCheck();step();}
+    check(reads.empty(),"probe before due period");APP_HapticRecovery_RunPlaybackHealthCheck();
+    check(reads.empty(),"playback health check performs I2C on key path");
+    pendingTrigger=true;step();check(reads.empty()&&s_idle_health_check_pending,"PLAY failed to defer check");pendingTrigger=false;
+    pendingRaw=true;step();check(reads.empty()&&s_idle_health_check_pending,"raw HID failed to defer check");pendingRaw=false;
+    arrivalDuringProbe=true;step();check(reads.size()==1&&reads[0]==0,"first AW probe");
+    arrivalDuringProbe=false;step();check(reads.size()==1,"new PLAY did not preempt next motor");pendingTrigger=false;
+    step();step();step();check(reads==std::vector<int>({0,1})&&!s_idle_health_check_pending,"progress lost or duplicate probe");
+    reset();due();ready[0]=false;
+    check(!APP_HapticRecovery_RunIdleHealthCheck()&&reads.empty()&&!s_idle_health_check_pending,"not-ready motor incorrectly accepted");
+    reset();due();failMotor=0;
+    check(!APP_HapticRecovery_RunIdleHealthCheck()&&recoveries==1&&reads.size()==1,"I2C failure not propagated/recovered");
+    check(currentMotor==APP_AW_DEVICE_COUNT-1&&!s_idle_health_motor_index,"failure left motor/progress changed");
+    failMotor=-1;due();step();check(reads.back()==0,"new health round did not restart at first motor");
+    reset();selected[0]=false;selected[APP_AW_DEVICE_COUNT-1]=true;due();
+    std::vector<int> expected;for(unsigned i=0;i<APP_AW_DEVICE_COUNT;++i)if(selected[i])expected.push_back(i);
+    for(unsigned i=0;i<APP_AW_DEVICE_COUNT+1;++i)step();
+    check(reads==expected,"unselected motor probed");
+    reset();for(unsigned round=0;round<1000;++round){
+        due();const auto before=reads.size();
+        for(unsigned i=0;i<12;++i){pendingTrigger=(i%3==0);step();}
+        pendingTrigger=false;step();
+        check(reads.size()-before==2&&!s_idle_health_check_pending,"stress: lost/duplicated or starved health round");
+    }
+    std::cout<<"PASS: actual MCU health-check functions; 1000 rounds/2000 probes; PLAY/raw deferral, bounded steps, preserved progress, faults. No hardware timing.\n";
+    return 0;
+}catch(const std::exception& error){std::cerr<<error.what()<<'\n';return 1;}}

@@ -2,6 +2,7 @@
 #include <chrono>
 #include <iostream>
 #include <string>
+#include <thread>
 
 int main() {
     const auto name=L"\\\\.\\pipe\\HybridIoTest-"+std::to_wstring(GetCurrentProcessId());
@@ -34,6 +35,29 @@ int main() {
         pending.start(server);
         ok=ok&&pending.poll(report,count)&&report[0]=='D';
         pending.start(server); // Destructor must safely cancel a live request.
+    }
+    {
+        // Repeated cancelled reads must not consume a later key or retain the
+        // previous completion signal when one event is reused across requests.
+        hybrid::ReusableOverlappedIo input;
+        stop=false;
+        for(unsigned i=0;i<1000;++i) {
+            ok=ok&&!input.perform(server,&value,1,false,0,count,stop);
+            sent=static_cast<char>(i%127+1);
+            DWORD written=0;
+            ok=ok&&WriteFile(client,&sent,1,&written,nullptr)&&written==1;
+            ok=ok&&input.perform(server,&value,1,false,100,count,stop)&&count==1&&value==sent;
+        }
+    }
+    {
+        // A notification posted before entering wait is retained. Exercise
+        // this handshake repeatedly to cover wake-before-wait transitions.
+        hybrid::WorkSignal input,ack;
+        input.notify_one();ok=ok&&input.wait(0)&&!input.wait(0);
+        std::atomic_uint received=0;
+        std::thread consumer([&]{for(unsigned i=0;i<1000;++i){if(!input.wait(2000))break;++received;ack.notify_one();}});
+        for(unsigned i=0;i<1000;++i){input.notify_one();if(!ack.wait(2000)){ok=false;break;}}
+        consumer.join();ok=ok&&received==1000;
     }
     CloseHandle(client);CloseHandle(server);
     std::cout<<"5 real pipe zero-wait drains: "<<micros<<" us; cancelled reads did not consume later data\n";

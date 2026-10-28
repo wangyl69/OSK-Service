@@ -124,7 +124,7 @@ public sealed class Worker : BackgroundService
                 {
                     try
                     {
-                        LatencyThreadScheduling.Apply(_options.Value.LatencyThreadPriorityBoost, _logger, "keyboard-hook");
+                        LatencyThreadScheduling.Apply(_options.Value.LatencyThreadPriorityBoost, _logger, "keyboard-hook", _options.Value.LatencyThreadPriority);
                         _hookThreadId =
                             GetCurrentThreadId();
 

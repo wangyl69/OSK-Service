@@ -12,6 +12,38 @@ namespace HybridSedPrototype.SemanticEventDispatcher.Tests;
 public sealed class NativeSenderWakeTests
 {
     [Fact]
+    public async Task Fixed_ring_preserves_each_producers_order_across_wraparound()
+    {
+        var queue = new HapticSendRing();
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var received = new List<(byte Code, long Created, long Trace)>();
+        var consumer = Task.Run(() =>
+        {
+            while (!queue.IsCompleted)
+            {
+                deadline.Token.ThrowIfCancellationRequested();
+                if (queue.TryTake(out var item)) received.Add(item);
+                else Thread.Yield();
+            }
+        });
+        var producers = Enumerable.Range(1, 4).Select(producer => Task.Run(() =>
+        {
+            for (int i = 0; i < 1000; ++i)
+                while (!queue.TryAdd(((byte)producer, i, producer * 1000 + i)))
+                { deadline.Token.ThrowIfCancellationRequested(); Thread.Yield(); }
+        })).ToArray();
+        try { await Task.WhenAll(producers).WaitAsync(deadline.Token); }
+        finally { queue.CompleteAdding(); }
+        await consumer.WaitAsync(deadline.Token);
+        Assert.Equal(4000, received.Count);
+        Assert.Equal(4000, received.Select(item => item.Trace).Distinct().Count());
+        foreach (int producer in Enumerable.Range(1, 4))
+            Assert.Equal(Enumerable.Range(0, 1000).Select(i => (long)i),
+                received.Where(item => item.Code == producer).Select(item => item.Created));
+        Assert.Throws<InvalidOperationException>(() => queue.TryAdd((1, 0, 0)));
+    }
+
+    [Fact]
     public async Task Native_event_drains_burst_and_shutdown_wakes_an_idle_sender()
     {
         string pipe = "NativeWake-" + Guid.NewGuid().ToString("N");
