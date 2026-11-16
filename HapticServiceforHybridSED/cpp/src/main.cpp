@@ -141,7 +141,7 @@ int wmain(int argc,wchar_t** argv) {
             else if(arg==L"--log") options.logFile=value();
             else if(arg==L"--help") {
                 std::cout<<"HybridHaptic --console [--mock] | --service | --install | --uninstall\n"
-                    "Options: --waveform 1..7 --intensity 1..3 --sed-pipe HybridSedHaptic --log FILE\n"
+                    "Options: --waveform 0..7 (0 follows MCU) --intensity 1..3 --sed-pipe HybridSedHaptic --log FILE\n"
                     " --keepalive-ms 0|100..10000 --status-mode auto|feature|interrupt|write-only\n"
                     " --mock-status-delay-ms 0..1000 (mock runtime interrupt ACK delay only)\n"
                     " --idle-wait fixed|deadline (default fixed; deadline is an opt-in comparison)\n"
@@ -151,7 +151,7 @@ int wmain(int argc,wchar_t** argv) {
                 return 0;
             }else throw std::runtime_error("Unknown argument");
         }
-        if(options.waveform<1||options.waveform>7||options.intensity<1||options.intensity>3)
+        if(options.waveform>7||options.intensity<1||options.intensity>3)
             throw std::runtime_error("Waveform/intensity out of range");
         if(options.keepaliveMs && options.keepaliveMs<100)throw std::runtime_error("keepalive must be 0 or 100..10000");
         if(options.statusMode!="auto"&&options.statusMode!="feature"&&options.statusMode!="interrupt"&&options.statusMode!="write-only")throw std::runtime_error("Unknown status mode");

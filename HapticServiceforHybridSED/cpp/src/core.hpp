@@ -32,7 +32,7 @@ inline bool capabilitiesMatch(const Report& r,bool feature,unsigned waveform) {
     const unsigned required=feature ? 0x86 : 0x83;
     const unsigned flags=r[first]|(r[first+1]<<8);
     return r[0]==(feature ? 0x10 : 0x81)&&r[1]==2&&r[2]==(feature ? 1 : 3)&&
-        (flags&required)==required&&r[first+5]>=waveform&&r[ids]==32&&
+        (flags&required)==required&&r[first+5]>=std::max(1U,waveform)&&r[ids]==32&&
         r[ids+1]==1&&r[ids+2]==2&&r[ids+3]==0x81&&r[ids+4]==0x10&&r[ids+5]==0x11;
 }
 inline Report base(std::uint8_t id, std::uint8_t op, std::uint16_t seq) {

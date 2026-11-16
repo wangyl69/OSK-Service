@@ -7,7 +7,7 @@
 namespace hybrid {
 struct Options {
     bool mock=false;
-    unsigned waveform=6, intensity=1;
+    unsigned waveform=0, intensity=1;
     unsigned keepaliveMs=250;
     std::string statusMode="auto";
     std::string threadPriority="highest";

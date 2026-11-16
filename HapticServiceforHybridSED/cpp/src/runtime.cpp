@@ -140,7 +140,7 @@ class Device {
     bool open_=false;
     std::uint16_t seq_=0;
     unsigned mockAccepted_=0;
-    std::uint8_t wave_=1,intensity_=1;
+    std::uint8_t wave_=6,intensity_=1;
     std::string mode_;
     std::string capabilities_="null";
     std::uint16_t next(){if(++seq_==0) ++seq_;return seq_;}
@@ -248,7 +248,8 @@ public:
         return s;
     }
     void open(unsigned waveform,unsigned intensity) {
-        wave_=static_cast<std::uint8_t>(waveform);intensity_=static_cast<std::uint8_t>(intensity);
+        if(waveform) wave_=static_cast<std::uint8_t>(waveform);
+        intensity_=static_cast<std::uint8_t>(intensity);
         if(!options_.mock) {
             GUID guid{};HidD_GetHidGuid(&guid);
             auto info=SetupDiGetClassDevsW(&guid,nullptr,nullptr,DIGCF_PRESENT|DIGCF_DEVICEINTERFACE);
@@ -305,10 +306,14 @@ public:
         log(mode_=="write-only" ? "HID DEGRADED: explicit write-only, feedback unconfirmed" : "HID WARM; waveform/intensity confirmed");
     }
     void configure(unsigned waveform,unsigned intensity) {
-        wave_=static_cast<std::uint8_t>(waveform);intensity_=static_cast<std::uint8_t>(intensity);
-        command(0x31,wave_);command(0x30,intensity_);
+        intensity_=static_cast<std::uint8_t>(intensity);
+        if(waveform) {
+            command(0x31,static_cast<std::uint8_t>(waveform));
+            if(options_.mock) wave_=static_cast<std::uint8_t>(waveform);
+        }
+        command(0x30,intensity_);
         if(mode_=="write-only") return;
-        for(unsigned i=0;i<25&&!stopping;++i) {auto s=snapshot();if(s.wave==wave_&&s.intensity==intensity_)return;Sleep(20);}
+        for(unsigned i=0;i<25&&!stopping;++i) {auto s=snapshot();if(s.wave>=1&&s.wave<=7&&(!waveform||s.wave==waveform)&&s.intensity==intensity_)return;Sleep(20);}
         throw std::runtime_error("MCU settings not confirmed");
     }
     Snapshot heartbeat(bool verify) {
@@ -319,7 +324,7 @@ public:
         send(control(0x22,0,next()));return {};
     }
     void trigger(const Edge& edge,std::uint64_t now) {
-        send(play(edge.key,static_cast<std::uint16_t>(std::min<std::uint64_t>((now-edge.tick)*1000,65535)),wave_,intensity_,next()));
+        send(play(edge.key,static_cast<std::uint16_t>(std::min<std::uint64_t>((now-edge.tick)*1000,65535)),0,intensity_,next()));
     }
     void close() noexcept {
         // Cancellation must finish before the device handle/buffer can be closed.
@@ -478,7 +483,7 @@ public:
         std::lock_guard lock(mutex_);
         if(command=="set") {
             if(!(input>>arg>>value)||(input>>extra)) return "{\"ok\":false,\"error\":\"expected set waveform|intensity|keepalive VALUE\"}";
-            if(arg=="waveform"&&value>=1&&value<=7){options_.waveform=value;++requested_;}
+            if(arg=="waveform"&&value<=7){options_.waveform=value;++requested_;}
             else if(arg=="intensity"&&value>=1&&value<=3){options_.intensity=value;++requested_;}
             else if(arg=="keepalive"&&(value==0||(value>=100&&value<=10000))) options_.keepaliveMs=value;
             else return "{\"ok\":false,\"error\":\"invalid setting/range\"}";
@@ -519,6 +524,9 @@ public:
                 {
                     std::lock_guard lock(mutex_);queue_.clear();ready_=enabled_&&!paused;
                     state_=device.mode()=="write-only"?"DEGRADED":"WARM";mode_=device.mode();capabilities_=device.capabilities();
+                    // An explicit choice is a one-shot update to the MCU default.
+                    // Recovery and later intensity changes follow the MCU thereafter.
+                    if(requested_==revision) options_.waveform=0;
                     applied_=revision;failures_=0;++generation_;cached_=snapshot;snapshotTick_=GetTickCount64();
                 }
                 auto verified=GetTickCount64(),lastIo=verified,lastStatus=verified;
@@ -587,7 +595,14 @@ public:
                         {std::lock_guard lock(metricsMutex_);queueTimes_.add(start-event->receivedUs);hidTimes_.add(end-start);totalTimes_.add(end-event->receivedUs);if(traceEnabled_)trace_.add(event->receivedUs,end,dequeuedUs,triggerUs,event->wait);}
                     }else {
                         auto start=micros();
-                        if(work==Work::Configure){phase="configure";device.configure(wave,intensity);cache(device.snapshot());std::lock_guard lock(mutex_);applied_=configRevision;}
+                        if(work==Work::Configure) {
+                            phase="configure";
+                            device.configure(wave,intensity);
+                            cache(device.snapshot());
+                            std::lock_guard lock(mutex_);
+                            applied_=configRevision;
+                            if(requested_==configRevision) options_.waveform=0;
+                        }
                         else if(work==Work::Diagnose){
                             phase="diagnose";lastStatus=GetTickCount64();
                             ++statusQueries_;
