@@ -145,3 +145,7 @@ MSVC 从 x64 开发者终端运行 build.ps1，不传 Compiler。测试脚本使
 - 当前终端非管理员，尚未实际执行SCM安装/启停。真实I²C/AW振动、回读、物理触摸至振动p95/p99、断电及睡眠恢复仍需目标机验证；同步HidD_GetFeature最坏阻塞时间未实测。日志已加入2MiB及3份历史轮转。
 
 根目录 Python 文件保留为历史参考，不再用于当前正式通路。原 Haptic_Service、Athena_Haptic 本轮未修改。
+
+## MCU global waveform selection
+
+The native backend defaults to `--waveform 0` and sends PLAY waveform 0 to follow the MCU global default. UART a-e/f/i and `HybridHaptic.exe --control "set waveform N"` select the shared default. Explicit Host selections are applied once, then the backend follows the MCU so intensity changes and reconnection do not replay an older selection. MCU reset restores the firmware boot default (Audio_TS01_6db in the matching formal firmware).
