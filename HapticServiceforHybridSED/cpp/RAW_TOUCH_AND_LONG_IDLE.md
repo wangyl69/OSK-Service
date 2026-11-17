@@ -22,7 +22,7 @@ Set-Location D:\work\OSK-MCU\HapticServiceforHybridSED\cpp
 3. 双指按下、移动、松开。
 
 可将单指、定位、双指分成三个单独的 30 秒文件，便于明确每段数据对应的动作。
-时间范围 1..120 秒；最多保留 2000 条报告，达到上限会提前结束并标记
+时间范围 1..120 秒；最多保留 10000 条报告，达到上限会提前结束并标记
 report_limit_reached。不要将本工具同时挂在最终 latency 基准上：采集本身有开销。
 
 提供 JSON、Panel 型号和驱动版本、Windows 缩放/方向、目标窗口区域，即可先做
@@ -41,6 +41,9 @@ touch_capture 内包含：
 注册成功而 sample_count=0，表示没有观察到符合条件的报告，不是兼容性通过。
 多条报告处于同一个 WM_INPUT 时保留各自边界，共用该消息接收时间。
 程序不对未知格式擅自猜测 X/Y 字节或将数据重新注入 OSK。
+
+2026-11-17 新增 `--show-targets` 五点引导、Windows 触摸指针记录与基于 HID 描述的坐标解析。
+两轮采集和一键打包见 [OSK 输入诊断指南](PANEL_INPUT_DIAGNOSTICS_zh.md)。
 
 ### 触控板也可以单独尝试采集
 

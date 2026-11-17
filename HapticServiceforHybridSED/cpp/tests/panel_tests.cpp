@@ -16,6 +16,10 @@ int main(){
     ok=ok&&!panel::parseHidPayload(std::span(bytes).first(bytes.size()-1),result);
     header.dwType=RIM_TYPEMOUSE;std::memcpy(bytes.data(),&header,sizeof(header));
     ok=ok&&!panel::parseHidPayload(bytes,result);
+    ok=ok&&panel::signedHidValue(65535,16,-32768)==-1;
+    ok=ok&&panel::signedHidValue(32768,16,-32768)==-32768;
+    ok=ok&&panel::signedHidValue(32768,16,0)==32768;
+    ok=ok&&panel::signedHidValue(0x80000000UL,32,-1)==-2147483648LL;
     header.dwType=RIM_TYPEHID;std::memcpy(bytes.data(),&header,sizeof(header));
     size=std::numeric_limits<DWORD>::max();std::memcpy(bytes.data()+offsetof(RAWINPUT,data),&size,4);
     ok=ok&&!panel::parseHidPayload(bytes,result);

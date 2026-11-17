@@ -1,5 +1,5 @@
 // Read-only metadata; optional bounded touchscreen/touchpad Raw Input capture.
-// No Output reports, Feature requests, mouse/keyboard capture or serial numbers.
+// No Output reports, Feature requests or mouse/keyboard text capture.
 #include <windows.h>
 #include <hidsdi.h>
 #include <setupapi.h>
@@ -18,10 +18,12 @@ static std::string utf8(const wchar_t* value) {
 }
 int main(int argc,char** argv) {
     unsigned seconds=0;
+    bool targets=false;
     USHORT usage=4;
     try {
         for(int index=1;index<argc;++index){
             auto option=std::string(argv[index]);
+            if(option=="--show-targets"){targets=true;continue;}
             if(index+1>=argc)throw std::runtime_error("Missing PanelProbe argument value");
             auto value=std::string(argv[++index]);
             if(option=="--capture-seconds"){
@@ -31,18 +33,22 @@ int main(int argc,char** argv) {
             }else if(option=="--capture-source"){
                 if(value!="touchscreen"&&value!="touchpad")throw std::runtime_error("capture-source must be touchscreen or touchpad");
                 usage=value=="touchpad"?5:4;
-            }else throw std::runtime_error("Usage: PanelProbe.exe [--capture-seconds 1..120] [--capture-source touchscreen|touchpad]");
+            }else throw std::runtime_error("Usage: PanelProbe.exe [--capture-seconds 1..120] [--capture-source touchscreen|touchpad] [--show-targets]");
         }
         if(usage==5&&!seconds)throw std::runtime_error("capture-source touchpad requires capture-seconds");
+        if(targets&&(!seconds||usage!=4))throw std::runtime_error("show-targets requires touchscreen capture-seconds");
     }catch(const std::exception& error){std::cerr<<error.what()<<'\n';return 2;}
+    // Logical HID coordinates and Windows physical screen coordinates are kept separate.
+    SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+    const bool perMonitor=AreDpiAwarenessContextsEqual(GetThreadDpiAwarenessContext(),DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)!=FALSE;
     std::string capture="null";
     if(seconds){
         std::cerr<<"Recording "<<(usage==5?"touchpad":"touchscreen")<<" Raw Input for up to "<<seconds<<" seconds; metadata/data go to stdout.\n";
-        try{panel::TouchCapture recorder(usage);capture=recorder.run(seconds);}
+        try{panel::TouchCapture recorder(usage);capture=recorder.run(seconds,targets);}
         catch(const std::exception& error){std::cerr<<error.what()<<'\n';return 1;}
     }
     using hybrid::jsonString;
-    std::cout<<"{\"scope\":\"Read-only HID/display metadata with optional digitizer samples; no calibration\",\"displays\":[";
+    std::cout<<"{\"scope\":\"Read-only HID/display metadata with optional digitizer samples; no calibration\",\"per_monitor_v2\":"<<(perMonitor?"true":"false")<<",\"displays\":[";
     bool first=true;
     for(DWORD index=0;;++index){
         DISPLAY_DEVICEW display{};display.cb=sizeof(display);
@@ -81,6 +87,7 @@ int main(int argc,char** argv) {
             HidD_GetManufacturerString(handle,manufacturer,sizeof(manufacturer));
             HidD_GetProductString(handle,product,sizeof(product));
             std::cout<<"{\"vid\":"<<attributes.VendorID<<",\"pid\":"<<attributes.ProductID
+                     <<",\"device_path\":"<<jsonString(utf8(detail->DevicePath))
                      <<",\"version\":"<<attributes.VersionNumber<<",\"manufacturer\":"<<jsonString(utf8(manufacturer))
                      <<",\"product\":"<<jsonString(utf8(product))<<",\"usage_page\":"<<caps.UsagePage
                      <<",\"usage\":"<<caps.Usage<<",\"input_report_bytes\":"<<caps.InputReportByteLength
