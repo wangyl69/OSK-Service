@@ -148,4 +148,4 @@ MSVC 从 x64 开发者终端运行 build.ps1，不传 Compiler。测试脚本使
 
 ## MCU global waveform selection
 
-The native backend defaults to `--waveform 0` and sends PLAY waveform 0 to follow the MCU global default. UART a-e/f/i and `HybridHaptic.exe --control "set waveform N"` select the shared default. Explicit Host selections are applied once, then the backend follows the MCU so intensity changes and reconnection do not replay an older selection. MCU reset restores the firmware boot default (Audio_TS01_6db in the matching formal firmware).
+The native backend defaults to `--waveform 0` and sends PLAY waveform 0 to follow the MCU global default. UART a-e/f/i and `HybridHaptic.exe --control "set waveform N"` select the shared default. Explicit Host selections are applied once, then the backend follows the MCU so intensity changes and reconnection do not replay an older selection. MCU reset restores the firmware boot default (TS01, HID id 1, in the matching formal firmware).
