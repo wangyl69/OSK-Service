@@ -53,6 +53,9 @@ public sealed class DispatcherOptions
     /// </summary>
     public int HapticPipeConnectTimeoutMs { get; set; } = 20;
 
+    /// <summary>Opt-in startup connection, before any haptic input; sends no event.</summary>
+    public bool HapticPipePreconnect { get; set; } = false;
+
     /// <summary>Enable configured priority for the hook and sender only; false restores Normal.</summary>
     public bool LatencyThreadPriorityBoost { get; set; } = true;
     /// <summary>normal, above-normal, or highest; process priority is unchanged.</summary>

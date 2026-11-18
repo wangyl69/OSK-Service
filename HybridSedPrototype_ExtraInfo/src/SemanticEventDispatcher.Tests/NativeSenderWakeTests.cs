@@ -12,6 +12,23 @@ namespace HybridSedPrototype.SemanticEventDispatcher.Tests;
 public sealed class NativeSenderWakeTests
 {
     [Fact]
+    public async Task Opt_in_preconnect_opens_pipe_without_publishing_a_haptic()
+    {
+        string pipe = "Preconnect-" + Guid.NewGuid().ToString("N");
+        using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        using var server = new NamedPipeServerStream(pipe, PipeDirection.In, 1,
+            PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+        using var publisher = new HapticPipePublisher(Options.Create(new DispatcherOptions
+        { HapticPipeName = pipe, HapticPipePreconnect = true }), NullLogger<HapticPipePublisher>.Instance);
+        await server.WaitForConnectionAsync(stop.Token);
+        Assert.Equal(0, publisher.GetStatistics().Published);
+        Assert.Equal(0, publisher.GetStatistics().Sent);
+        using var noData = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+            await server.ReadAsync(new byte[1], noData.Token));
+    }
+
+    [Fact]
     public async Task Fixed_ring_preserves_each_producers_order_across_wraparound()
     {
         var queue = new HapticSendRing();

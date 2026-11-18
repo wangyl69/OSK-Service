@@ -86,7 +86,7 @@ public sealed class HapticPipePublisher : ISemanticEventPublisher, IDisposable
         _sender = new Thread(() =>
         {
             LatencyThreadScheduling.Apply(value.LatencyThreadPriorityBoost, _logger, "haptic-sender", value.LatencyThreadPriority);
-            Send();
+            Send(value.HapticPipePreconnect);
         })
         {
             IsBackground = true,
@@ -155,11 +155,28 @@ public sealed class HapticPipePublisher : ISemanticEventPublisher, IDisposable
         else { CountDrop(ref _queueFull); _trace?.Complete(trace, HapticLatencyTrace.QueueFull); }
     }
 
-    private void Send()
+    private void Send(bool preconnect)
     {
         try
         {
             using var writer = new NativePipeWriter();
+            if (preconnect)
+            {
+                try
+                {
+                    // Warm the initial managed connect/JIT path before an input
+                    // exists. Never enqueue a synthetic haptic or replay a key.
+                    using var startup = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token);
+                    startup.CancelAfter(1000);
+                    _pipe = _connect(startup.Token).GetAwaiter().GetResult();
+                    _logger.LogInformation("Preconnected to haptic pipe {PipeName}; no haptic event sent.", _pipeName);
+                }
+                catch (Exception ex) when (ex is IOException or OperationCanceledException or TimeoutException or UnauthorizedAccessException)
+                {
+                    _pipe?.Dispose(); _pipe = null;
+                    _logger.LogWarning(ex, "Startup haptic pipe preconnect failed; normal event handling remains available.");
+                }
+            }
             foreach (var item in Consume())
             {
                 _trace?.Dequeued(item.Trace);
