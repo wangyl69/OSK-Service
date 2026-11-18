@@ -143,6 +143,7 @@ class Device {
     std::uint8_t wave_=6,intensity_=1;
     std::string mode_;
     std::string capabilities_="null";
+    bool traceMcuPlay_=false;
     std::uint16_t next(){if(++seq_==0) ++seq_;return seq_;}
     Report feature(std::uint8_t id) {
         Report r{};r[0]=id;
@@ -229,6 +230,7 @@ public:
         statusPending_=false;return s;
     }
     void rememberCaps(unsigned flags,unsigned motors,unsigned active,unsigned waves,unsigned heartbeat,unsigned failsafe) {
+        traceMcuPlay_=options_.latencyTrace && (flags & latencyTraceCapability);
         capabilities_="{\"flags\":"+std::to_string(flags)+",\"motor_count\":"+std::to_string(motors)+
             ",\"active_motors\":"+std::to_string(active)+",\"waveform_count\":"+std::to_string(waves)+
             ",\"heartbeat_seconds\":"+std::to_string(heartbeat)+",\"failsafe_seconds\":"+std::to_string(failsafe)+"}";
@@ -323,8 +325,11 @@ public:
         }
         send(control(0x22,0,next()));return {};
     }
-    void trigger(const Edge& edge,std::uint64_t now) {
-        send(play(edge.key,static_cast<std::uint16_t>(std::min<std::uint64_t>((now-edge.tick)*1000,65535)),0,intensity_,next()));
+    std::uint16_t trigger(const Edge& edge,std::uint64_t now) {
+        const auto sequence=next();
+        const auto age=static_cast<std::uint16_t>(std::min<std::uint64_t>((now-edge.tick)*1000,65535));
+        send(play(edge.key,age,0,intensity_,sequence,traceMcuPlay_));
+        return sequence;
     }
     void close() noexcept {
         // Cancellation must finish before the device handle/buffer can be closed.
@@ -459,6 +464,8 @@ public:
             out<<"],\"stage_samples\":[";
             first=true;for(const auto& item:samples){if(!first)out<<',';first=false;
                 out<<'['<<item.sequence<<','<<item.receivedUs<<','<<item.dequeuedUs<<','<<item.triggerUs<<','<<item.completedUs<<']';}
+            out<<"],\"hid_sequences\":[";
+            first=true;for(const auto& item:samples){if(!first)out<<',';first=false;out<<item.hidSequence;}
             out<<"],\"wait_samples\":[";
             first=true;for(const auto& item:samples){if(!first)out<<',';first=false;const auto& w=item.wait;
                 out<<'['<<item.sequence<<','<<w.submitLockedUs<<','<<w.enqueuedUs<<','<<w.workerLockRequestUs<<','<<w.workerLockedUs<<','<<w.waitReturnedUs<<','<<w.inputThread<<','<<w.workerThread<<','<<w.waitEnteredUs<<','<<w.waitTimeoutMs<<','<<w.waitSignaled<<']';}
@@ -590,9 +597,10 @@ public:
                         if(now<event->edge.tick||now-event->edge.tick>50){std::lock_guard lock(mutex_);++stale_;++dropped;continue;}
                         phase="play_write";
                         const auto triggerUs=traceEnabled_?micros():0;
-                        try{device.trigger(event->edge,now);}catch(...){std::lock_guard lock(mutex_);++failedPlay_;++dropped;throw;}
+                        std::uint16_t hidSequence;
+                        try{hidSequence=device.trigger(event->edge,now);}catch(...){std::lock_guard lock(mutex_);++failedPlay_;++dropped;throw;}
                         auto end=micros();++sent;
-                        {std::lock_guard lock(metricsMutex_);queueTimes_.add(start-event->receivedUs);hidTimes_.add(end-start);totalTimes_.add(end-event->receivedUs);if(traceEnabled_)trace_.add(event->receivedUs,end,dequeuedUs,triggerUs,event->wait);}
+                        {std::lock_guard lock(metricsMutex_);queueTimes_.add(start-event->receivedUs);hidTimes_.add(end-start);totalTimes_.add(end-event->receivedUs);if(traceEnabled_)trace_.add(event->receivedUs,end,dequeuedUs,triggerUs,event->wait,hidSequence);}
                     }else {
                         auto start=micros();
                         if(work==Work::Configure) {

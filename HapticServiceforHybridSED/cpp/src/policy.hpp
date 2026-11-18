@@ -62,12 +62,12 @@ struct WaitTrace {
     std::uint64_t waitEnteredUs=0;
     unsigned waitTimeoutMs=0,waitSignaled=0;
 };
-struct TraceSample {std::uint64_t sequence=0,receivedUs=0,completedUs=0,dequeuedUs=0,triggerUs=0;WaitTrace wait{};};
+struct TraceSample {std::uint64_t sequence=0,receivedUs=0,completedUs=0,dequeuedUs=0,triggerUs=0;WaitTrace wait{};std::uint16_t hidSequence=0;};
 struct TraceRing {
     std::array<TraceSample,128> data{};
     std::uint64_t total=0;
-    void add(std::uint64_t received,std::uint64_t completed,std::uint64_t dequeued=0,std::uint64_t trigger=0,WaitTrace wait={}) {
-        data[total%data.size()]={total+1,received,completed,dequeued,trigger,wait};++total;
+    void add(std::uint64_t received,std::uint64_t completed,std::uint64_t dequeued=0,std::uint64_t trigger=0,WaitTrace wait={},std::uint16_t hidSequence=0) {
+        data[total%data.size()]={total+1,received,completed,dequeued,trigger,wait,hidSequence};++total;
     }
     std::vector<TraceSample> snapshot() const {
         std::vector<TraceSample> out;

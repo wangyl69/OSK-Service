@@ -9,6 +9,8 @@
 namespace hybrid {
 constexpr std::uint64_t marker = 0x5345445F4F534B;
 using Report = std::array<std::uint8_t, 32>;
+constexpr std::uint16_t latencyTraceCapability = 0x0800;
+constexpr std::uint8_t latencyTraceFlag = 0x20;
 // WARM is an idle-ready observation, not a persistent session liveness bit.
 inline bool sessionAlive(std::uint8_t flags) { return (flags & 0x01) != 0; }
 inline void word(Report& r, unsigned offset, std::uint16_t value) {
@@ -47,8 +49,9 @@ inline Report control(std::uint8_t op, std::uint8_t value, std::uint16_t seq) {
     return r;
 }
 inline Report play(std::uint16_t key, std::uint16_t age, std::uint8_t waveform,
-                   std::uint8_t intensity, std::uint16_t seq) {
+                   std::uint8_t intensity, std::uint16_t seq, bool latencyTrace=false) {
     auto r = base(1, 1, seq);
+    if (latencyTrace) r[3] |= latencyTraceFlag;
     word(r, 7, key); r[14] = waveform; r[15] = intensity;
     r[16] = 1; // touch phase: down
     word(r, 18, age); r[31] = crc8(r);

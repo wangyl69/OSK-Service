@@ -41,6 +41,12 @@ int main() {
        play[APP_I2CHID_EVENT_OFFSET_INTENSITY]!=3||
        play[APP_I2CHID_EVENT_OFFSET_TOUCH_PHASE]!=1||
        play[APP_I2CHID_EVENT_OFFSET_AGE_US]!=0x78)return 5;
+    static_assert(hybrid::latencyTraceCapability==APP_I2CHID_CAP_LATENCY_TRACE);
+    const auto traced=hybrid::play(0x1234,0x5678,2,3,0x9abc,true);
+    auto expected=play;
+    expected[APP_I2CHID_OFFSET_FLAGS]|=APP_I2CHID_EVENT_FLAG_LATENCY_TRACE;
+    expected.back()=hybrid::crc8(expected);
+    if((play[APP_I2CHID_OFFSET_FLAGS]&APP_I2CHID_EVENT_FLAG_LATENCY_TRACE) || expected!=traced)return 6;
     std::cout<<"PASS: Feature/interrupt capabilities and PLAY match the firmware public protocol\n";
     return 0;
 }

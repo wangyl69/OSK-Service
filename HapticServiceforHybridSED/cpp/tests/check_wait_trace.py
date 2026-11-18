@@ -15,6 +15,8 @@ def main():
         trace=backend.control('trace')
         assert trace['completion_kind']=='mock'
         assert len(trace['samples'])==len(trace['stage_samples'])==len(trace['wait_samples'])==128
+        assert len(set(trace['hid_sequences']))==len(trace['hid_sequences'])==128
+        assert all(0<seq<=65535 for seq in trace['hid_sequences'])
         for legacy,s,w in zip(trace['samples'],trace['stage_samples'],trace['wait_samples']):
             assert legacy==[s[0],s[1],s[4]] and s[0]==w[0]
             assert s[1]<=w[1]<=w[2]<=s[2]<=s[3]<=s[4]
