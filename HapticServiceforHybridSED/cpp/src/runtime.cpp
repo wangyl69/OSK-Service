@@ -150,7 +150,7 @@ class Device {
         if(options_.mock) {
             if(options_.mockFeatureUnavailable) throw std::runtime_error("Feature unavailable (mock)");
             r[1]=2;r[2]=id==0x10 ? 1 : 2;r[3]=1;r[6]=intensity_;r[7]=wave_;r[14]=open_ ? 3 : 0;
-            if(id==0x10){r[6]=0x87;r[7]=0;r[8]=2;r[9]=2;r[11]=7;r[14]=32;r[15]=1;r[16]=2;r[17]=0x81;r[18]=0x10;r[19]=0x11;r[20]=10;r[21]=30;}
+            if(id==0x10){r[6]=0x87;r[7]=0;r[8]=2;r[9]=2;r[11]=waveformCatalogSize;r[14]=32;r[15]=1;r[16]=2;r[17]=0x81;r[18]=0x10;r[19]=0x11;r[20]=10;r[21]=30;}
             else word(r,17,static_cast<std::uint16_t>(mockAccepted_));
             r[31]=crc8(r);
         }else if(!HidD_GetFeature(handle_.get(),r.data(),static_cast<ULONG>(r.size()))) fail("HidD_GetFeature");
@@ -180,7 +180,7 @@ class Device {
         if(options_.mock) {
             Report ack{};ack[0]=0x81;ack[1]=2;ack[2]=1;ack[6]=1;ack[7]=2;ack[8]=op;
             ack[9]=3;ack[13]=wave_;ack[14]=intensity_;word(ack,28,static_cast<std::uint16_t>(mockAccepted_));
-            if(op==0x33){ack[2]=3;ack[10]=0x87;ack[11]=0;ack[12]=2;ack[13]=2;ack[15]=7;ack[18]=32;ack[19]=1;ack[20]=2;ack[21]=0x81;ack[22]=0x10;ack[23]=0x11;ack[24]=10;ack[25]=30;}
+            if(op==0x33){ack[2]=3;ack[10]=0x87;ack[11]=0;ack[12]=2;ack[13]=2;ack[15]=waveformCatalogSize;ack[18]=32;ack[19]=1;ack[20]=2;ack[21]=0x81;ack[22]=0x10;ack[23]=0x11;ack[24]=10;ack[25]=30;}
             ack[31]=crc8(ack);
             return ack;
         }
@@ -315,7 +315,7 @@ public:
         }
         command(0x30,intensity_);
         if(mode_=="write-only") return;
-        for(unsigned i=0;i<25&&!stopping;++i) {auto s=snapshot();if(s.wave>=1&&s.wave<=7&&(!waveform||s.wave==waveform)&&s.intensity==intensity_)return;Sleep(20);}
+        for(unsigned i=0;i<25&&!stopping;++i) {auto s=snapshot();if(s.wave>=1&&s.wave<=waveformCatalogSize&&(!waveform||s.wave==waveform)&&s.intensity==intensity_)return;Sleep(20);}
         throw std::runtime_error("MCU settings not confirmed");
     }
     Snapshot heartbeat(bool verify) {
@@ -490,7 +490,7 @@ public:
         std::lock_guard lock(mutex_);
         if(command=="set") {
             if(!(input>>arg>>value)||(input>>extra)) return "{\"ok\":false,\"error\":\"expected set waveform|intensity|keepalive VALUE\"}";
-            if(arg=="waveform"&&value<=7){options_.waveform=value;++requested_;}
+            if(arg=="waveform"&&value<=waveformCatalogSize){options_.waveform=value;++requested_;}
             else if(arg=="intensity"&&value>=1&&value<=3){options_.intensity=value;++requested_;}
             else if(arg=="keepalive"&&(value==0||(value>=100&&value<=10000))) options_.keepaliveMs=value;
             else return "{\"ok\":false,\"error\":\"invalid setting/range\"}";

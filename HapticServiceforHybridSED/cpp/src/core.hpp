@@ -11,6 +11,7 @@ constexpr std::uint64_t marker = 0x5345445F4F534B;
 using Report = std::array<std::uint8_t, 32>;
 constexpr std::uint16_t latencyTraceCapability = 0x0800;
 constexpr std::uint8_t latencyTraceFlag = 0x20;
+constexpr unsigned waveformCatalogSize = 19;
 // WARM is an idle-ready observation, not a persistent session liveness bit.
 inline bool sessionAlive(std::uint8_t flags) { return (flags & 0x01) != 0; }
 inline void word(Report& r, unsigned offset, std::uint16_t value) {
