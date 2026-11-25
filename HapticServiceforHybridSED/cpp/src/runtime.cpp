@@ -315,7 +315,7 @@ public:
         }
         command(0x30,intensity_);
         if(mode_=="write-only") return;
-        for(unsigned i=0;i<25&&!stopping;++i) {auto s=snapshot();if(s.wave>=1&&s.wave<=waveformCatalogSize&&(!waveform||s.wave==waveform)&&s.intensity==intensity_)return;Sleep(20);}
+        for(unsigned i=0;i<25&&!stopping;++i) {auto s=snapshot();if(s.wave>=1&&validWaveform(s.wave)&&(!waveform||s.wave==waveform)&&s.intensity==intensity_)return;Sleep(20);}
         throw std::runtime_error("MCU settings not confirmed");
     }
     Snapshot heartbeat(bool verify) {
@@ -490,7 +490,7 @@ public:
         std::lock_guard lock(mutex_);
         if(command=="set") {
             if(!(input>>arg>>value)||(input>>extra)) return "{\"ok\":false,\"error\":\"expected set waveform|intensity|keepalive VALUE\"}";
-            if(arg=="waveform"&&value<=waveformCatalogSize){options_.waveform=value;++requested_;}
+            if(arg=="waveform"&&validWaveform(value)){options_.waveform=value;++requested_;}
             else if(arg=="intensity"&&value>=1&&value<=3){options_.intensity=value;++requested_;}
             else if(arg=="keepalive"&&(value==0||(value>=100&&value<=10000))) options_.keepaliveMs=value;
             else return "{\"ok\":false,\"error\":\"invalid setting/range\"}";
