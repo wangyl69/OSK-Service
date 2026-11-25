@@ -143,6 +143,7 @@ class Device {
     std::uint8_t wave_=6,intensity_=1;
     std::string mode_;
     std::string capabilities_="null";
+    unsigned deviceWaveformCount_=0;
     bool traceMcuPlay_=false;
     std::uint16_t next(){if(++seq_==0) ++seq_;return seq_;}
     Report feature(std::uint8_t id) {
@@ -230,6 +231,7 @@ public:
         statusPending_=false;return s;
     }
     void rememberCaps(unsigned flags,unsigned motors,unsigned active,unsigned waves,unsigned heartbeat,unsigned failsafe) {
+        deviceWaveformCount_=waves;
         traceMcuPlay_=options_.latencyTrace && (flags & latencyTraceCapability);
         capabilities_="{\"flags\":"+std::to_string(flags)+",\"motor_count\":"+std::to_string(motors)+
             ",\"active_motors\":"+std::to_string(active)+",\"waveform_count\":"+std::to_string(waves)+
@@ -308,6 +310,8 @@ public:
         log(mode_=="write-only" ? "HID DEGRADED: explicit write-only, feedback unconfirmed" : "HID WARM; waveform/intensity confirmed");
     }
     void configure(unsigned waveform,unsigned intensity) {
+        if(waveform>=8 && deviceWaveformCount_!=0 && deviceWaveformCount_!=waveformCatalogSize)
+            throw std::runtime_error("INCOMPATIBLE: capture IDs require the matching 28-waveform MCU catalog");
         intensity_=static_cast<std::uint8_t>(intensity);
         if(waveform) {
             command(0x31,static_cast<std::uint8_t>(waveform));
