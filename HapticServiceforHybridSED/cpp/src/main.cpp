@@ -141,7 +141,7 @@ int wmain(int argc,wchar_t** argv) {
             else if(arg==L"--log") options.logFile=value();
             else if(arg==L"--help") {
                 std::cout<<"HybridHaptic --console [--mock] | --service | --install | --uninstall\n"
-                    "Options: --waveform 0..28 (0 follows MCU) --intensity 1..3 --sed-pipe HybridSedHaptic --log FILE\n"
+                    "Options: --waveform 0..39 except 25 (0 follows MCU) --intensity 1..3 --sed-pipe HybridSedHaptic --log FILE\n"
                     " --keepalive-ms 0|100..10000 --status-mode auto|feature|interrupt|write-only\n"
                     " --mock-status-delay-ms 0..1000 (mock runtime interrupt ACK delay only)\n"
                     " --idle-wait fixed|deadline (default fixed; deadline is an opt-in comparison)\n"
