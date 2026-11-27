@@ -311,7 +311,7 @@ public:
     }
     void configure(unsigned waveform,unsigned intensity) {
         if(waveform>=8 && deviceWaveformCount_!=0 && deviceWaveformCount_!=waveformCatalogSize)
-            throw std::runtime_error("INCOMPATIBLE: capture IDs require the matching MCU catalog through ID 39");
+            throw std::runtime_error("INCOMPATIBLE: capture IDs require the matching MCU catalog through ID 42");
         intensity_=static_cast<std::uint8_t>(intensity);
         if(waveform) {
             command(0x31,static_cast<std::uint8_t>(waveform));
